@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "aisens-web-search": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["aisens_search.py"]
+    }
+  }
+}
