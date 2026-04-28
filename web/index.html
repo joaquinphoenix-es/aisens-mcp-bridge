@@ -1,1 +1,109 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AISENS - AI Search</title><style>*{box-sizing:border-box;margin:0;padding:0}body{background:#0a0a0f;color:#e8eaed;font-family:'Inter','Segoe UI',sans-serif;display:flex;flex-direction:column;height:100vh;overflow:hidden}header{background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);padding:18px 28px;display:flex;align-items:center;gap:14px;border-bottom:1px solid rgba(123,140,222,.15);box-shadow:0 2px 12px rgba(0,0,0,.3)}header h1{font-size:1.6rem;font-weight:700;background:linear-gradient(135deg,#7b8cde,#a8b5ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:3px}.status{background:rgba(76,175,80,.15);color:#4caf50;font-size:.7rem;padding:3px 11px;border-radius:14px;border:1px solid rgba(76,175,80,.3);animation:pulse 2s ease-in-out infinite}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}#chat{flex:1;overflow-y:auto;padding:28px;display:flex;flex-direction:column;gap:20px;scroll-behavior:smooth}#chat::-webkit-scrollbar{width:6px}#chat::-webkit-scrollbar-track{background:transparent}#chat::-webkit-scrollbar-thumb{background:rgba(123,140,222,.3);border-radius:3px}.message{max-width:78%;animation:slideIn .3s ease-out;opacity:0;animation-fill-mode:forwards}@keyframes slideIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}.message.user{align-self:flex-end;background:linear-gradient(135deg,#2d3575,#3d4fbc);border-radius:18px 18px 4px 18px;padding:14px 18px;box-shadow:0 3px 12px rgba(61,79,188,.25)}.message.user .text{line-height:1.5}.message.bot{align-self:flex-start;display:flex;flex-direction:column;gap:14px}.summary{background:rgba(26,26,46,.7);border:1px solid rgba(123,140,222,.15);border-radius:14px;padding:18px 22px;backdrop-filter:blur(10px);line-height:1.7;box-shadow:0 4px 16px rgba(0,0,0,.2)}.sources{display:flex;flex-direction:column;gap:10px}.source-card{background:rgba(26,26,46,.5);border:1px solid rgba(123,140,222,.12);border-radius:12px;padding:15px 18px;transition:all .25s ease;cursor:pointer;position:relative;overflow:hidden}.source-card:hover{border-color:rgba(123,140,222,.35);background:rgba(26,26,46,.75);transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,0,0,.3)}.source-card::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;background:linear-gradient(180deg,#7b8cde,#a8b5ff);opacity:0;transition:opacity .25s}.source-card:hover::before{opacity:1}.source-title{font-weight:600;font-size:.95rem;color:#a8b5ff;margin-bottom:7px;display:flex;align-items:center;gap:8px}.source-domain{font-size:.75rem;color:rgba(168,181,255,.6);background:rgba(123,140,222,.1);padding:2px 8px;border-radius:6px;font-family:monospace}.source-snippet{font-size:.88rem;color:rgba(232,234,237,.8);line-height:1.6;margin-bottom:8px}.source-url{font-size:.8rem;color:rgba(123,140,222,.7);text-decoration:none;word-break:break-all;transition:color .2s}.source-url:hover{color:#7b8cde}.thinking{background:rgba(26,26,46,.5);border:1px solid rgba(123,140,222,.12);border-radius:14px;padding:16px 20px;font-style:italic;color:rgba(232,234,237,.5);display:flex;align-items:center;gap:10px}.thinking-dot{width:6px;height:6px;background:rgba(123,140,222,.6);border-radius:50%;animation:bounce 1.4s ease-in-out infinite}.thinking-dot:nth-child(2){animation-delay:.2s}.thinking-dot:nth-child(3){animation-delay:.4s}@keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-8px)}}.input-bar{background:rgba(26,26,46,.8);border-top:1px solid rgba(123,140,222,.15);padding:20px 28px;display:flex;gap:14px;backdrop-filter:blur(12px)}#input{flex:1;background:rgba(15,15,26,.9);border:1px solid rgba(123,140,222,.25);border-radius:12px;padding:14px 18px;color:#e8eaed;font-size:1rem;outline:none;transition:all .25s;font-family:inherit}#input:focus{border-color:rgba(123,140,222,.6);box-shadow:0 0 0 3px rgba(123,140,222,.12)}#input::placeholder{color:rgba(232,234,237,.3)}#send{background:linear-gradient(135deg,#3d4fbc,#5060d0);color:#fff;border:none;border-radius:12px;padding:14px 28px;font-size:1rem;font-weight:600;cursor:pointer;transition:all .25s;box-shadow:0 4px 12px rgba(61,79,188,.3)}#send:hover:not(:disabled){background:linear-gradient(135deg,#5060d0,#6070e0);transform:translateY(-1px);box-shadow:0 6px 16px rgba(61,79,188,.4)}#send:active{transform:translateY(0)}#send:disabled{background:rgba(42,42,74,.5);cursor:not-allowed;box-shadow:none}.timestamp{font-size:.7rem;color:rgba(232,234,237,.35);margin-top:6px;text-align:right}</style></head><body><header><h1>AISENS</h1><span class="status">online</span></header><div id="chat"><div class="message bot"><div class="summary">Hello! I'm AISENS, your AI assistant with real-time web search. Ask me anything!</div></div></div><div class="input-bar"><input id="input" placeholder="right" autocomplete="off"><button id="send">Send</button></div><script>const chat=document.getElementById('chat'),input=document.getElementById('input'),sendBtn=document.getElementById('send');let msgCount=0;function getTime(){const d=new Date();return d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}function addMessage(content,type){msgCount++;const div=document.createElement('div');div.className='message '+type;div.style.animationDelay=(msgCount*.05)+'s';if(type==='user'){div.innerHTML=`<div class="text">${escapeHtml(content)}</div><div class="timestamp">${getTime()}</div>`}else if(type==='thinking'){div.className='thinking';div.innerHTML='<div class="thinking-dot"></div><div class="thinking-dot"></div><div class="thinking-dot"></div><span>AISENS is searching...</span>'}else if(type==='bot'){const data=content;let html='';if(data.summary){html+=`<div class="summary">${escapeHtml(data.summary)}</div>`}if(data.sources&&data.sources.length){html+='<div class="sources">';data.sources.forEach(src=>{html+=`<div class="source-card" onclick="window.open('${escapeHtml(src.url)}','_blank')"><div class="source-title">${escapeHtml(src.title||'Source')}${src.domain?'<span class="source-domain">'+escapeHtml(src.domain)+'</span>':''}</div><div class="source-snippet">${escapeHtml(src.snippet||'')}</div><a class="source-url" href="${escapeHtml(src.url)}" target="_blank" onclick="event.stopPropagation()">${escapeHtml(src.url)}</a></div>`});html+='</div>'}html+=`<div class="timestamp">${getTime()}</div>`;div.innerHTML=html}chat.appendChild(div);chat.scrollTop=chat.scrollHeight;return div}function escapeHtml(str){const div=document.createElement('div');div.textContent=str;return div.innerHTML}async function send(){const msg=input.value.trim();if(!msg)return;input.value='';sendBtn.disabled=true;addMessage(msg,'user');const thinking=addMessage(null,'thinking');try{const res=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg})});const json=await res.json();chat.removeChild(thinking);if(json.type==='result'&&json.data){addMessage(json.data,'bot')}else{addMessage({summary:json.message||'Error occurred. Please try again.'},sources:[]},'bot')}}catch(e){chat.removeChild(thinking);addMessage({summary:'Connection error. Please check your internet and try again.',sources:[]},'bot')}sendBtn.disabled=false;input.focus()}sendBtn.addEventListener('click',send);input.addEventListener('keydown',e=>{if(e.key==='Enter')send()});input.focus()</script></body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AISENS</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0a0a0f; color: #e8eaed; font-family: 'Inter', 'Segoe UI', sans-serif; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+    header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); padding: 16px 28px; display: flex; align-items: center; gap: 14px; border-bottom: 1px solid rgba(123,140,222,.15); flex-shrink: 0; }
+    header h1 { font-size: 1.5rem; font-weight: 700; background: linear-gradient(135deg, #7b8cde, #a8b5ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; letter-spacing: 3px; }
+    .status-dot { width: 9px; height: 9px; border-radius: 50%; background: #4caf50; box-shadow: 0 0 6px #4caf50; animation: pulse 2s ease-in-out infinite; flex-shrink: 0; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .status-label { font-size: .75rem; color: #4caf50; background: rgba(76,175,80,.12); border: 1px solid rgba(76,175,80,.3); border-radius: 12px; padding: 2px 10px; }
+    #chat { flex: 1; overflow-y: auto; padding: 24px 28px; display: flex; flex-direction: column; gap: 18px; scroll-behavior: smooth; }
+    #chat::-webkit-scrollbar { width: 5px; }
+    #chat::-webkit-scrollbar-thumb { background: rgba(123,140,222,.25); border-radius: 3px; }
+    .message { max-width: 80%; animation: slideIn .25s ease-out both; }
+    @keyframes slideIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+    .message.user { align-self: flex-end; background: linear-gradient(135deg, #2d3575, #3d4fbc); border-radius: 18px 18px 4px 18px; padding: 12px 18px; line-height: 1.55; box-shadow: 0 3px 12px rgba(61,79,188,.25); }
+    .message.bot { align-self: flex-start; display: flex; flex-direction: column; gap: 12px; }
+    .summary-card { background: rgba(26,26,46,.8); border: 1px solid rgba(123,140,222,.18); border-radius: 14px; padding: 16px 20px; line-height: 1.7; backdrop-filter: blur(10px); }
+    .summary-card.error { border-color: rgba(244,67,54,.3); background: rgba(40,10,10,.7); color: #ef9a9a; }
+    .sources { display: flex; flex-direction: column; gap: 8px; }
+    .sources-label { font-size: .72rem; text-transform: uppercase; letter-spacing: 1px; color: #7b8cde; margin-bottom: 2px; }
+    .source-card { background: rgba(20,20,40,.6); border: 1px solid rgba(123,140,222,.12); border-radius: 10px; padding: 10px 14px; text-decoration: none; color: inherit; display: block; transition: border-color .2s, background .2s; }
+    .source-card:hover { border-color: rgba(123,140,222,.4); background: rgba(30,30,60,.7); }
+    .source-title { font-size: .88rem; font-weight: 600; color: #a8b5ff; margin-bottom: 3px; }
+    .source-domain { font-size: .72rem; color: #888; margin-bottom: 4px; }
+    .source-snippet { font-size: .8rem; color: #aaa; line-height: 1.5; }
+    .typing { align-self: flex-start; background: rgba(26,26,46,.8); border: 1px solid rgba(123,140,222,.18); border-radius: 14px; padding: 14px 20px; display: flex; gap: 6px; align-items: center; }
+    .typing span { width: 7px; height: 7px; border-radius: 50%; background: #7b8cde; animation: bounce .9s ease-in-out infinite; }
+    .typing span:nth-child(2) { animation-delay: .15s; }
+    .typing span:nth-child(3) { animation-delay: .3s; }
+    @keyframes bounce { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-6px)} }
+    #input-area { background: rgba(16,16,32,.9); border-top: 1px solid rgba(123,140,222,.12); padding: 16px 28px; display: flex; gap: 12px; align-items: flex-end; flex-shrink: 0; }
+    #msg-input { flex: 1; background: rgba(26,26,46,.9); border: 1px solid rgba(123,140,222,.2); border-radius: 12px; color: #e8eaed; font-size: .95rem; padding: 12px 16px; resize: none; min-height: 46px; max-height: 140px; outline: none; transition: border-color .2s; font-family: inherit; line-height: 1.5; }
+    #msg-input::placeholder { color: #555; }
+    #msg-input:focus { border-color: rgba(123,140,222,.5); }
+    #send-btn { background: linear-gradient(135deg, #3d4fbc, #7b8cde); border: none; border-radius: 12px; color: #fff; cursor: pointer; font-size: .9rem; font-weight: 600; padding: 12px 22px; transition: opacity .2s, transform .1s; white-space: nowrap; align-self: flex-end; height: 46px; }
+    #send-btn:hover:not(:disabled) { opacity: .88; }
+    #send-btn:active:not(:disabled) { transform: scale(.97); }
+    #send-btn:disabled { opacity: .45; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+<header>
+  <div class="status-dot"></div>
+  <h1>AISENS</h1>
+  <span class="status-label">Live Search</span>
+</header>
+<div id="chat">
+  <div class="message bot">
+    <div class="summary-card">
+      Hello! I'm <strong>AISENS</strong> &mdash; your AI assistant with real-time web search.<br>
+      Ask me about current news, stock prices, weather, sports results, or anything you need to know right now.
+    </div>
+  </div>
+</div>
+<div id="input-area">
+  <textarea id="msg-input" placeholder="Ask anything…" rows="1"></textarea>
+  <button id="send-btn">Send</button>
+</div>
+<script>
+  const chat = document.getElementById('chat');
+  const input = document.getElementById('msg-input');
+  const sendBtn = document.getElementById('send-btn');
+  input.addEventListener('input', () => { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 140) + 'px'; });
+  input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
+  sendBtn.addEventListener('click', sendMessage);
+  function scrollToBottom() { chat.scrollTop = chat.scrollHeight; }
+  function appendUserMessage(text) { const div = document.createElement('div'); div.className = 'message user'; div.textContent = text; chat.appendChild(div); scrollToBottom(); }
+  function showTyping() { const el = document.createElement('div'); el.className = 'typing'; el.id = 'typing-indicator'; el.innerHTML = '<span></span><span></span><span></span>'; chat.appendChild(el); scrollToBottom(); return el; }
+  function removeTyping() { const el = document.getElementById('typing-indicator'); if (el) el.remove(); }
+  function appendBotMessage(data) {
+    removeTyping();
+    const wrapper = document.createElement('div'); wrapper.className = 'message bot';
+    const summary = document.createElement('div'); summary.className = 'summary-card'; summary.textContent = data.summary || 'No answer available.'; wrapper.appendChild(summary);
+    if (data.sources && data.sources.length > 0) {
+      const sourcesWrap = document.createElement('div'); sourcesWrap.className = 'sources';
+      const label = document.createElement('div'); label.className = 'sources-label'; label.textContent = 'Sources'; sourcesWrap.appendChild(label);
+      data.sources.forEach(src => {
+        const a = document.createElement('a'); a.className = 'source-card'; a.href = src.url || '#'; a.target = '_blank'; a.rel = 'noopener noreferrer';
+        const title = document.createElement('div'); title.className = 'source-title'; title.textContent = src.title || 'Untitled'; a.appendChild(title);
+        if (src.domain) { const d = document.createElement('div'); d.className = 'source-domain'; d.textContent = src.domain; a.appendChild(d); }
+        if (src.snippet) { const s = document.createElement('div'); s.className = 'source-snippet'; s.textContent = src.snippet; a.appendChild(s); }
+        sourcesWrap.appendChild(a);
+      });
+      wrapper.appendChild(sourcesWrap);
+    }
+    chat.appendChild(wrapper); scrollToBottom();
+  }
+  function appendErrorMessage(msg) { removeTyping(); const wrapper = document.createElement('div'); wrapper.className = 'message bot'; const card = document.createElement('div'); card.className = 'summary-card error'; card.textContent = msg; wrapper.appendChild(card); chat.appendChild(wrapper); scrollToBottom(); }
+  async function sendMessage() {
+    const text = input.value.trim(); if (!text) return;
+    input.value = ''; input.style.height = 'auto';
+    sendBtn.disabled = true; input.disabled = true;
+    appendUserMessage(text); showTyping();
+    try {
+      const res = await fetch('/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: text }) });
+      const json = await res.json();
+      if (!res.ok || json.type === 'error') { appendErrorMessage(json.message || 'Server error (' + res.status + ')'); }
+      else { appendBotMessage(json.data); }
+    } catch (err) { appendErrorMessage('Could not reach the server. Please try again.'); console.error(err); }
+    finally { sendBtn.disabled = false; input.disabled = false; input.focus(); }
+  }
+</script>
+</body>
+</html>
