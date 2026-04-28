@@ -11,53 +11,60 @@ TAVILY_API_KEY = os.environ.get('TAVILY_API_KEY', '')
 def web_search(query):
     """Search the web using Tavily and return a rich answer."""
     if not TAVILY_API_KEY:
-        return None, None
+        return None, []
     try:
         r = requests.post(
             'https://api.tavily.com/search',
             json={
                 'api_key': TAVILY_API_KEY,
                 'query': query,
-                'search_depth': 'basic',
+                'search_depth': 'advanced',
                 'max_results': 5,
-                'include_answer': True
+                'include_answer': True,
+                'include_raw_content': False
             },
-            timeout=15
+            timeout=20
         )
         data = r.json()
-        answer = data.get('answer', '')
+        answer = data.get('answer', '') or ''
         results = data.get('results', [])
-        return answer, results
+        return answer.strip(), results
     except Exception as e:
-        return None, None
+        return None, []
 
 
-def build_reply(user_message, answer, results):
-    """Build a clean, readable reply from Tavily results."""
-    if answer and len(answer) > 30:
-        reply = answer
-        if results:
-            sources = []
-            for r in results[:3]:
-                title = r.get('title', '')
-                url = r.get('url', '')
-                if title and url:
-                    sources.append(f"- {title}")
-            if sources:
-                reply += "\n\nSources:\n" + "\n".join(sources)
-        return reply
+def build_reply(answer, results):
+    """Build a rich reply combining Tavily answer and top results."""
+    sections = []
 
-    if results:
-        parts = []
-        for r in results[:3]:
-            title = r.get('title', '')
-            content = r.get('content', '')[:300]
-            if title and content:
-                parts.append(f"{title}:\n{content}")
-        if parts:
-            return "Here is what I found:\n\n" + "\n\n".join(parts)
+    # Always include the Tavily answer if meaningful
+    if answer and len(answer) > 20:
+        sections.append(answer)
 
-    return "I searched the web but could not find a clear answer to your question. Please try rephrasing."
+    # Always include content from top results
+    for res in results[:3]:
+        title = res.get('title', '').strip()
+        content = res.get('content', '').strip()
+        url = res.get('url', '').strip()
+        if content and len(content) > 30:
+            snippet = content[:500]
+            if not snippet.endswith('.'):
+                # trim to last full sentence
+                last_dot = snippet.rfind('.')
+                if last_dot > 100:
+                    snippet = snippet[:last_dot + 1]
+            entry = ''
+            if title:
+                entry += f'**{title}**\n'
+            entry += snippet
+            if url:
+                entry += f'\n{url}'
+            sections.append(entry)
+
+    if not sections:
+        return 'I searched the web but could not find relevant results. Please try rephrasing your question.'
+
+    return '\n\n---\n\n'.join(sections)
 
 
 @app.route('/')
@@ -71,14 +78,10 @@ def chat():
     user_message = data.get('message', '').strip()
     if not user_message:
         return jsonify({'reply': 'Please send a message.'})
-
-    # Search the web
     answer, results = web_search(user_message)
-
-    if answer is None and results is None:
-        return jsonify({'reply': 'AISENS web search is not configured. Please set TAVILY_API_KEY.'})
-
-    reply = build_reply(user_message, answer, results)
+    if answer is None:
+        return jsonify({'reply': 'Web search is not available. Please check TAVILY_API_KEY.'})
+    reply = build_reply(answer, results)
     return jsonify({'reply': reply})
 
 
@@ -88,5 +91,5 @@ def health():
 
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8080))
+    port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
