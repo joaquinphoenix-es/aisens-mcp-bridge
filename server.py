@@ -9,7 +9,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 TAVILY_API_KEY = os.environ.get('TAVILY_API_KEY', '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')
-OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
+PPLX_API_KEY = os.environ.get('PPLX_API_KEY', '')
 
 app = Flask(__name__, static_folder='web', static_url_path='')
 CORS(app)
@@ -29,35 +29,44 @@ def is_conversational(text):
         return True
     return any(lower.startswith(pat) or (' ' + pat) in lower for pat in CONVERSATIONAL_PATTERNS)
 
-def llm_chat(system_prompt, user_message):
-    if not OPENAI_API_KEY:
-        return None
+def perplexity_chat(system_prompt, user_message, use_search=False):
+    if not PPLX_API_KEY:
+        return None, []
+    model = 'sonar'
     try:
         resp = requests.post(
-            'https://api.openai.com/v1/chat/completions',
-            headers={'Authorization': 'Bearer ' + OPENAI_API_KEY, 'Content-Type': 'application/json'},
+            'https://api.perplexity.ai/chat/completions',
+            headers={
+                'Authorization': 'Bearer ' + PPLX_API_KEY,
+                'Content-Type': 'application/json'
+            },
             json={
-                'model': 'gpt-4o-mini',
-                'messages': [{'role': 'system', 'content': system_prompt}, {'role': 'user', 'content': user_message}],
+                'model': model,
+                'messages': [
+                    {'role': 'system', 'content': system_prompt},
+                    {'role': 'user', 'content': user_message}
+                ],
                 'max_tokens': 400,
                 'temperature': 0.7
             },
-            timeout=15
+            timeout=20
         )
         resp.raise_for_status()
-        return resp.json()['choices'][0]['message']['content'].strip()
+        data = resp.json()
+        answer = data['choices'][0]['message']['content'].strip()
+        citations = data.get('citations', [])
+        return answer, citations
     except Exception as e:
-        logger.error('OpenAI error: ' + str(e))
-        return None
+        logger.error('Perplexity error: ' + str(e))
+        return None, []
 
 def conversational_reply(query):
     system = (
-        "You are AISENS, a friendly and knowledgeable AI assistant. "
-        "You have access to real-time web search for factual questions. "
-        "For casual conversation, greetings, and small talk, respond naturally and warmly. "
+        "You are AISENS, a friendly and knowledgeable AI assistant with real-time web search. "
+        "For casual conversation, greetings and small talk, respond naturally and warmly. "
         "Keep replies concise (1-3 sentences). Do not use markdown formatting."
     )
-    result = llm_chat(system, query)
+    result, _ = perplexity_chat(system, query, use_search=False)
     if result:
         return result
     lower = query.lower()
@@ -74,6 +83,29 @@ def conversational_reply(query):
     return "I'm here to help! Ask me about current news, stock prices, weather, sports results, or anything you want to know."
 
 def search_and_reply(query):
+    if PPLX_API_KEY:
+        return perplexity_search(query)
+    return tavily_search(query)
+
+def perplexity_search(query):
+    system = (
+        "You are AISENS, a friendly AI assistant with real-time web search. "
+        "Answer the user's question directly and naturally in 2-4 sentences. "
+        "Do not use bullet points or markdown. Be conversational and informative."
+    )
+    answer, citations = perplexity_chat(system, query, use_search=True)
+    if not answer:
+        return tavily_search(query)
+    sources = []
+    for url in citations[:5]:
+        try:
+            domain = urlparse(url).netloc
+        except Exception:
+            domain = ''
+        sources.append({'title': domain, 'url': url, 'snippet': '', 'domain': domain})
+    return answer, sources
+
+def tavily_search(query):
     resp = requests.post(
         'https://api.tavily.com/search',
         json={
@@ -89,25 +121,7 @@ def search_and_reply(query):
     tavily_data = resp.json()
     raw_answer = tavily_data.get('answer', '')
     results = tavily_data.get('results', [])
-    context_parts = []
-    for r in results[:3]:
-        context_parts.append('- ' + r.get('title', '') + ': ' + r.get('content', '')[:300])
-    context_str = ' | '.join(context_parts)
-    if raw_answer or context_parts:
-        system = (
-            "You are AISENS, a friendly AI assistant with real-time web search. "
-            "Using the search results provided, write a clear, natural, conversational answer "
-            "to the user's question. Be concise (2-4 sentences). Do not use bullet points or markdown. "
-            "Do not say 'according to my search' — just answer directly and naturally."
-        )
-        user_msg = 'Question: ' + query + ' | Search answer: ' + raw_answer + ' | Top results: ' + context_str
-        natural_answer = llm_chat(system, user_msg)
-        if natural_answer:
-            summary = natural_answer
-        else:
-            summary = raw_answer or (results[0].get('content', '')[:500] if results else 'No results found.')
-    else:
-        summary = "I couldn't find relevant information for that query. Could you rephrase it?"
+    summary = raw_answer or (results[0].get('content', '')[:500] if results else "I couldn't find relevant information for that query.")
     sources = []
     for r in results:
         url = r.get('url', '')
@@ -139,10 +153,10 @@ def chat():
             return jsonify({'type': 'error', 'message': 'No message provided'}), 400
         logger.info('Query: ' + query)
         if is_conversational(query):
-            logger.info('Conversational reply (no search)')
+            logger.info('Conversational reply')
             reply = conversational_reply(query)
             return jsonify({'type': 'result', 'data': {'summary': reply, 'sources': []}})
-        logger.info('Web search')
+        logger.info('Search query')
         summary, sources = search_and_reply(query)
         return jsonify({'type': 'result', 'data': {'summary': summary, 'sources': sources}})
     except requests.exceptions.Timeout:
