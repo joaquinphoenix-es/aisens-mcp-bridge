@@ -1,1 +1,1 @@
-worker: python mcp_pipe.py
+web: python server.py
