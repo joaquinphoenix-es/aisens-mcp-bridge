@@ -1,20 +1,17 @@
 import os
-import json
 from flask import Flask, request, jsonify, send_from_directory
 import requests
+from datetime import datetime
 
 app = Flask(__name__, static_folder='.')
 
 TAVILY_API_KEY = os.environ.get('TAVILY_API_KEY', '')
-OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
-OPENAI_BASE_URL = os.environ.get('OPENAI_BASE_URL', 'https://api.openai.com/v1')
-MODEL = os.environ.get('MODEL', 'gpt-4o-mini')
 
 
 def web_search(query):
-    """Search the web using Tavily."""
+    """Search the web using Tavily and return a rich answer."""
     if not TAVILY_API_KEY:
-        return None
+        return None, None
     try:
         r = requests.post(
             'https://api.tavily.com/search',
@@ -22,58 +19,45 @@ def web_search(query):
                 'api_key': TAVILY_API_KEY,
                 'query': query,
                 'search_depth': 'basic',
-                'max_results': 3,
+                'max_results': 5,
                 'include_answer': True
             },
-            timeout=10
+            timeout=15
         )
         data = r.json()
-        return data.get('answer') or '\n'.join(
-            [f"- {r['title']}: {r['content'][:200]}" for r in data.get('results', [])]
-        )
+        answer = data.get('answer', '')
+        results = data.get('results', [])
+        return answer, results
     except Exception as e:
-        return None
+        return None, None
 
 
-def ask_llm(user_message, search_context=None):
-    """Call the LLM with optional search context."""
-    if not OPENAI_API_KEY:
-        if search_context:
-            return f"AISENS found this: {search_context}"
-        return "AISENS is running but no LLM API key is configured. Please set OPENAI_API_KEY."
+def build_reply(user_message, answer, results):
+    """Build a clean, readable reply from Tavily results."""
+    if answer and len(answer) > 30:
+        reply = answer
+        if results:
+            sources = []
+            for r in results[:3]:
+                title = r.get('title', '')
+                url = r.get('url', '')
+                if title and url:
+                    sources.append(f"- {title}")
+            if sources:
+                reply += "\n\nSources:\n" + "\n".join(sources)
+        return reply
 
-    system_prompt = """You are AISENS, a helpful AI assistant with internet access.
-You are concise, accurate, and friendly. You always respond in the same language the user writes in."""
+    if results:
+        parts = []
+        for r in results[:3]:
+            title = r.get('title', '')
+            content = r.get('content', '')[:300]
+            if title and content:
+                parts.append(f"{title}:\n{content}")
+        if parts:
+            return "Here is what I found:\n\n" + "\n\n".join(parts)
 
-    messages = [{"role": "system", "content": system_prompt}]
-
-    if search_context:
-        messages.append({
-            "role": "system",
-            "content": f"Web search results for context:\n{search_context}"
-        })
-
-    messages.append({"role": "user", "content": user_message})
-
-    try:
-        r = requests.post(
-            f"{OPENAI_BASE_URL}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {OPENAI_API_KEY}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "model": MODEL,
-                "messages": messages,
-                "max_tokens": 1024,
-                "temperature": 0.7
-            },
-            timeout=30
-        )
-        data = r.json()
-        return data['choices'][0]['message']['content']
-    except Exception as e:
-        return f"Error contacting LLM: {str(e)}"
+    return "I searched the web but could not find a clear answer to your question. Please try rephrasing."
 
 
 @app.route('/')
@@ -88,18 +72,19 @@ def chat():
     if not user_message:
         return jsonify({'reply': 'Please send a message.'})
 
-    # Try web search first for factual/current queries
-    search_context = web_search(user_message)
+    # Search the web
+    answer, results = web_search(user_message)
 
-    # Get LLM response
-    reply = ask_llm(user_message, search_context)
+    if answer is None and results is None:
+        return jsonify({'reply': 'AISENS web search is not configured. Please set TAVILY_API_KEY.'})
 
+    reply = build_reply(user_message, answer, results)
     return jsonify({'reply': reply})
 
 
 @app.route('/health')
 def health():
-    return jsonify({'status': 'ok', 'service': 'aisens-web'})
+    return jsonify({'status': 'ok', 'service': 'aisens-web', 'time': datetime.utcnow().isoformat()})
 
 
 if __name__ == '__main__':
