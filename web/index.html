@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AISENS</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -27,12 +28,12 @@
       color: #7b8cde;
       letter-spacing: 2px;
     }
-    header span {
-      font-size: 0.75rem;
+    .status {
+      background: #1e4d2b;
       color: #4caf50;
-      background: #1e3a1e;
-      padding: 2px 8px;
-      border-radius: 10px;
+      font-size: 0.75rem;
+      padding: 2px 10px;
+      border-radius: 12px;
     }
     #chat {
       flex: 1;
@@ -42,118 +43,130 @@
       flex-direction: column;
       gap: 16px;
     }
-    .msg {
+    .bubble {
       max-width: 75%;
       padding: 12px 16px;
       border-radius: 12px;
-      line-height: 1.5;
+      line-height: 1.6;
       font-size: 0.95rem;
-      white-space: pre-wrap;
     }
-    .msg.user {
-      background: #1e3a5f;
-      color: #cde;
-      align-self: flex-end;
-      border-bottom-right-radius: 2px;
-    }
-    .msg.aisens {
+    .bubble.bot {
       background: #1a1a2e;
-      color: #e0e0e0;
+      border: 1px solid #2a2a4a;
       align-self: flex-start;
-      border-bottom-left-radius: 2px;
-      border-left: 3px solid #7b8cde;
     }
-    .msg.typing {
-      color: #666;
+    .bubble.bot h1, .bubble.bot h2, .bubble.bot h3, .bubble.bot h4 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #9ba8e8;
+      margin: 6px 0 2px;
+    }
+    .bubble.bot a {
+      color: #7b8cde;
+      word-break: break-all;
+    }
+    .bubble.bot p { margin: 4px 0; }
+    .bubble.bot hr { border-color: #2a2a4a; margin: 10px 0; }
+    .bubble.bot strong { color: #b0baff; }
+    .bubble.user {
+      background: #2d3575;
+      align-self: flex-end;
+    }
+    .bubble.thinking {
+      background: #1a1a2e;
+      border: 1px solid #2a2a4a;
+      align-self: flex-start;
       font-style: italic;
+      color: #666;
     }
-    #inputArea {
-      display: flex;
+    .input-bar {
+      background: #1a1a2e;
       padding: 16px 24px;
+      display: flex;
       gap: 12px;
       border-top: 1px solid #2a2a4a;
-      background: #111;
     }
-    #userInput {
+    #input {
       flex: 1;
-      background: #1a1a2e;
+      background: #0f0f1a;
       border: 1px solid #2a2a4a;
       border-radius: 8px;
       padding: 12px 16px;
       color: #e0e0e0;
-      font-size: 0.95rem;
-      resize: none;
+      font-size: 1rem;
       outline: none;
     }
-    #userInput:focus { border-color: #7b8cde; }
-    #sendBtn {
-      background: #7b8cde;
+    #input:focus { border-color: #7b8cde; }
+    #send {
+      background: #3d4fbc;
       color: white;
       border: none;
       border-radius: 8px;
-      padding: 12px 20px;
-      cursor: pointer;
+      padding: 12px 24px;
       font-size: 1rem;
+      cursor: pointer;
       transition: background 0.2s;
     }
-    #sendBtn:hover { background: #5a6bbf; }
-    #sendBtn:disabled { background: #333; cursor: not-allowed; }
+    #send:hover { background: #5060d0; }
+    #send:disabled { background: #2a2a4a; cursor: not-allowed; }
   </style>
 </head>
 <body>
   <header>
     <h1>AISENS</h1>
-    <span>online</span>
+    <span class="status" id="status">online</span>
   </header>
-  <div id="chat"></div>
-  <div id="inputArea">
-    <textarea id="userInput" rows="2" placeholder="Ask AISENS something..."></textarea>
-    <button id="sendBtn">Send</button>
+  <div id="chat">
+    <div class="bubble bot">Hello! I am AISENS, your AI assistant with internet access. How can I help you today?</div>
+  </div>
+  <div class="input-bar">
+    <input id="input" type="text" placeholder="Ask AISENS something..." />
+    <button id="send">Send</button>
   </div>
   <script>
     const chat = document.getElementById('chat');
-    const input = document.getElementById('userInput');
-    const btn = document.getElementById('sendBtn');
+    const input = document.getElementById('input');
+    const sendBtn = document.getElementById('send');
 
-    function addMsg(text, role) {
+    function addBubble(text, type) {
       const div = document.createElement('div');
-      div.className = 'msg ' + role;
-      div.textContent = text;
+      div.className = 'bubble ' + type;
+      if (type === 'bot') {
+        div.innerHTML = marked.parse(text);
+      } else {
+        div.textContent = text;
+      }
       chat.appendChild(div);
       chat.scrollTop = chat.scrollHeight;
       return div;
     }
 
     async function sendMessage() {
-      const text = input.value.trim();
-      if (!text) return;
+      const msg = input.value.trim();
+      if (!msg) return;
       input.value = '';
-      btn.disabled = true;
-      addMsg(text, 'user');
-      const typing = addMsg('AISENS is thinking...', 'aisens typing');
+      sendBtn.disabled = true;
+      addBubble(msg, 'user');
+      const thinking = addBubble('AISENS is thinking...', 'thinking');
       try {
         const res = await fetch('/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: text })
+          body: JSON.stringify({ message: msg })
         });
         const data = await res.json();
-        typing.remove();
-        addMsg(data.reply || 'No response received.', 'aisens');
+        chat.removeChild(thinking);
+        addBubble(data.reply || 'No response.', 'bot');
       } catch (e) {
-        typing.remove();
-        addMsg('Connection error. Please try again.', 'aisens');
+        chat.removeChild(thinking);
+        addBubble('Error connecting to AISENS. Please try again.', 'bot');
       }
-      btn.disabled = false;
+      sendBtn.disabled = false;
       input.focus();
     }
 
-    btn.addEventListener('click', sendMessage);
-    input.addEventListener('keydown', e => {
-      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-    });
-
-    addMsg('Hello! I am AISENS, your AI assistant with internet access. How can I help you today?', 'aisens');
+    sendBtn.addEventListener('click', sendMessage);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') sendMessage(); });
   </script>
 </body>
 </html>
