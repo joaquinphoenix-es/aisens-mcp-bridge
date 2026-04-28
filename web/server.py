@@ -38,7 +38,7 @@ def build_reply(answer, results):
     sections = []
 
     # Always include the Tavily answer if meaningful
-    if answer and len(answer) > 20:
+    if answer and len(answer) > 10:
         sections.append(answer)
 
     # Always include content from top results
@@ -46,22 +46,31 @@ def build_reply(answer, results):
         title = res.get('title', '').strip()
         content = res.get('content', '').strip()
         url = res.get('url', '').strip()
-        if content and len(content) > 30:
-            snippet = content[:500]
-            if not snippet.endswith('.'):
-                # trim to last full sentence
-                last_dot = snippet.rfind('.')
-                if last_dot > 100:
-                    snippet = snippet[:last_dot + 1]
-            entry = ''
-            if title:
-                entry += f'**{title}**\n'
-            entry += snippet
-            if url:
-                entry += f'\n{url}'
-            sections.append(entry)
+        entry_parts = []
+        if title:
+            entry_parts.append(f'**{title}**')
+        if content:
+            snippet = content[:600]
+            last_dot = snippet.rfind('.')
+            if last_dot > 80:
+                snippet = snippet[:last_dot + 1]
+            entry_parts.append(snippet)
+        if url:
+            entry_parts.append(url)
+        if entry_parts:
+            sections.append('\n'.join(entry_parts))
 
     if not sections:
+        # Last resort: show raw result titles
+        if results:
+            lines = []
+            for res in results[:5]:
+                t = res.get('title', '')
+                u = res.get('url', '')
+                if t or u:
+                    lines.append(f'{t} - {u}' if t and u else t or u)
+            if lines:
+                return 'Here are the top results I found:\n\n' + '\n'.join(lines)
         return 'I searched the web but could not find relevant results. Please try rephrasing your question.'
 
     return '\n\n---\n\n'.join(sections)
@@ -70,6 +79,29 @@ def build_reply(answer, results):
 @app.route('/')
 def index():
     return send_from_directory('.', 'index.html')
+
+
+@app.route('/debug', methods=['GET'])
+def debug():
+    """Debug endpoint to test Tavily raw response."""
+    query = request.args.get('q', 'latest news Spain')
+    if not TAVILY_API_KEY:
+        return jsonify({'error': 'No TAVILY_API_KEY set'})
+    try:
+        r = requests.post(
+            'https://api.tavily.com/search',
+            json={
+                'api_key': TAVILY_API_KEY,
+                'query': query,
+                'search_depth': 'basic',
+                'max_results': 3,
+                'include_answer': True
+            },
+            timeout=20
+        )
+        return jsonify(r.json())
+    except Exception as e:
+        return jsonify({'error': str(e)})
 
 
 @app.route('/chat', methods=['POST'])
