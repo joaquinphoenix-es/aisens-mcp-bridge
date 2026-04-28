@@ -1,5 +1,6 @@
 from flask import Flask, send_from_directory, request, jsonify
 import os
+from flask_cors import CORS
 import requests
 import logging
 from urllib.parse import urlparse
@@ -12,6 +13,7 @@ logger = logging.getLogger(__name__)
 TAVILY_API_KEY = os.environ.get('TAVILY_API_KEY', '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')
 
 app = Flask(__name__, static_folder='web', static_url_path='')
+CORS(app)
 
 @app.route('/')
 def serve_index():
