@@ -2,3 +2,4 @@ mcp
 requests
 python-dotenv
 websockets
+flask
