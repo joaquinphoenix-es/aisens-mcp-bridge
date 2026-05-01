@@ -4,6 +4,11 @@
       "type": "stdio",
       "command": "python",
       "args": ["aisens_search.py"]
+    },
+    "aisens-launcher": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["aisens_launcher_tool.py"]
     }
   }
 }
