@@ -220,6 +220,19 @@ def chat():
         logger.error('Error: ' + str(e))
         return jsonify({'type': 'error', 'message': 'Error: ' + str(e)}), 500
 
+
+@app.route('/snapshot')
+def snapshot():
+    try:
+        headers = {'ngrok-skip-browser-warning': 'true'}
+        cam_resp = requests.get(CAMERA_URL, timeout=10, headers=headers)
+        cam_resp.raise_for_status()
+        content_type = cam_resp.headers.get('Content-Type', 'image/jpeg')
+        return cam_resp.content, 200, {'Content-Type': content_type, 'Cache-Control': 'no-store'}
+    except Exception as e:
+        logger.error('Snapshot error: ' + str(e))
+        return jsonify({'error': str(e)}), 502
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
     logger.info('Starting server on port ' + str(port))
