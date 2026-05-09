@@ -37,73 +37,174 @@
     #msg-input { flex: 1; background: rgba(26,26,46,.9); border: 1px solid rgba(123,140,222,.2); border-radius: 12px; color: #e8eaed; font-size: .95rem; padding: 12px 16px; resize: none; min-height: 46px; max-height: 140px; outline: none; transition: border-color .2s; font-family: inherit; line-height: 1.5; }
     #msg-input::placeholder { color: #555; }
     #msg-input:focus { border-color: rgba(123,140,222,.5); }
+    #camera-btn { background: rgba(26,26,46,.9); border: 1px solid rgba(123,140,222,.3); border-radius: 12px; color: #a8b5ff; cursor: pointer; font-size: 1.2rem; padding: 0 14px; height: 46px; transition: background .2s, border-color .2s; align-self: flex-end; flex-shrink: 0; }
+    #camera-btn:hover { background: rgba(123,140,222,.15); border-color: rgba(123,140,222,.6); }
+    #camera-btn:disabled { opacity: .45; cursor: not-allowed; }
     #send-btn { background: linear-gradient(135deg, #3d4fbc, #7b8cde); border: none; border-radius: 12px; color: #fff; cursor: pointer; font-size: .9rem; font-weight: 600; padding: 12px 22px; transition: opacity .2s, transform .1s; white-space: nowrap; align-self: flex-end; height: 46px; }
     #send-btn:hover:not(:disabled) { opacity: .88; }
     #send-btn:active:not(:disabled) { transform: scale(.97); }
     #send-btn:disabled { opacity: .45; cursor: not-allowed; }
+    .camera-snapshot { border-radius: 10px; max-width: 100%; border: 1px solid rgba(123,140,222,.25); margin-top: 4px; display: block; }
+    .snapshot-label { font-size: .72rem; color: #7b8cde; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
   </style>
 </head>
 <body>
-<header>
-  <div class="status-dot"></div>
-  <h1>AISENS</h1>
-  <span class="status-label">Live Search</span>
-</header>
-<div id="chat">
-  <div class="message bot">
-    <div class="summary-card">
-      Hello! I'm <strong>AISENS</strong> &mdash; your AI assistant with real-time web search.<br>
-      Ask me about current news, stock prices, weather, sports results, or anything you need to know right now.
+  <header>
+    <div class="status-dot"></div>
+    <h1>AISENS</h1>
+    <span class="status-label">&#128267; Live Search</span>
+  </header>
+  <div id="chat">
+    <div class="message bot">
+      <div class="summary-card">Hello! I'm <strong>AISENS</strong> &mdash; your AI assistant with real-time web search and camera vision.<br>Ask me about news, prices, weather, or say <em>"show me the camera"</em> to see what I see.</div>
     </div>
   </div>
-</div>
-<div id="input-area">
-  <textarea id="msg-input" placeholder="Ask anything…" rows="1"></textarea>
-  <button id="send-btn">Send</button>
-</div>
-<script>
-  const chat = document.getElementById('chat');
-  const input = document.getElementById('msg-input');
-  const sendBtn = document.getElementById('send-btn');
-  input.addEventListener('input', () => { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 140) + 'px'; });
-  input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
-  sendBtn.addEventListener('click', sendMessage);
-  function scrollToBottom() { chat.scrollTop = chat.scrollHeight; }
-  function appendUserMessage(text) { const div = document.createElement('div'); div.className = 'message user'; div.textContent = text; chat.appendChild(div); scrollToBottom(); }
-  function showTyping() { const el = document.createElement('div'); el.className = 'typing'; el.id = 'typing-indicator'; el.innerHTML = '<span></span><span></span><span></span>'; chat.appendChild(el); scrollToBottom(); return el; }
-  function removeTyping() { const el = document.getElementById('typing-indicator'); if (el) el.remove(); }
-  function appendBotMessage(data) {
-    removeTyping();
-    const wrapper = document.createElement('div'); wrapper.className = 'message bot';
-    const summary = document.createElement('div'); summary.className = 'summary-card'; summary.textContent = data.summary || 'No answer available.'; wrapper.appendChild(summary);
-    if (data.sources && data.sources.length > 0) {
-      const sourcesWrap = document.createElement('div'); sourcesWrap.className = 'sources';
-      const label = document.createElement('div'); label.className = 'sources-label'; label.textContent = 'Sources'; sourcesWrap.appendChild(label);
-      data.sources.forEach(src => {
-        const a = document.createElement('a'); a.className = 'source-card'; a.href = src.url || '#'; a.target = '_blank'; a.rel = 'noopener noreferrer';
-        const title = document.createElement('div'); title.className = 'source-title'; title.textContent = src.title || 'Untitled'; a.appendChild(title);
-        if (src.domain) { const d = document.createElement('div'); d.className = 'source-domain'; d.textContent = src.domain; a.appendChild(d); }
-        if (src.snippet) { const s = document.createElement('div'); s.className = 'source-snippet'; s.textContent = src.snippet; a.appendChild(s); }
-        sourcesWrap.appendChild(a);
-      });
-      wrapper.appendChild(sourcesWrap);
+  <div id="input-area">
+    <textarea id="msg-input" placeholder="Ask anything... or say 'show me the camera'" rows="1"></textarea>
+    <button id="camera-btn" title="Take a snapshot">&#128247;</button>
+    <button id="send-btn">Send</button>
+  </div>
+  <script>
+    const chat = document.getElementById('chat');
+    const input = document.getElementById('msg-input');
+    const sendBtn = document.getElementById('send-btn');
+    const cameraBtn = document.getElementById('camera-btn');
+
+    const VISION_KEYWORDS = ['camera', 'see', 'room', 'who is', 'look', 'snapshot', 'photo', 'image', 'capture', 'face', 'emotion', 'feeling', 'there anyone', 'anyone there', 'show me'];
+
+    input.addEventListener('input', () => { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 140) + 'px'; });
+    input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
+    sendBtn.addEventListener('click', sendMessage);
+    cameraBtn.addEventListener('click', showSnapshot);
+
+    function scrollToBottom() { chat.scrollTop = chat.scrollHeight; }
+
+    function appendUserMessage(text) {
+      const div = document.createElement('div');
+      div.className = 'message user';
+      div.textContent = text;
+      chat.appendChild(div);
+      scrollToBottom();
     }
-    chat.appendChild(wrapper); scrollToBottom();
-  }
-  function appendErrorMessage(msg) { removeTyping(); const wrapper = document.createElement('div'); wrapper.className = 'message bot'; const card = document.createElement('div'); card.className = 'summary-card error'; card.textContent = msg; wrapper.appendChild(card); chat.appendChild(wrapper); scrollToBottom(); }
-  async function sendMessage() {
-    const text = input.value.trim(); if (!text) return;
-    input.value = ''; input.style.height = 'auto';
-    sendBtn.disabled = true; input.disabled = true;
-    appendUserMessage(text); showTyping();
-    try {
-      const res = await fetch('/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: text }) });
-      const json = await res.json();
-      if (!res.ok || json.type === 'error') { appendErrorMessage(json.message || 'Server error (' + res.status + ')'); }
-      else { appendBotMessage(json.data); }
-    } catch (err) { appendErrorMessage('Could not reach the server. Please try again.'); console.error(err); }
-    finally { sendBtn.disabled = false; input.disabled = false; input.focus(); }
-  }
-</script>
+
+    function showTyping() {
+      const el = document.createElement('div');
+      el.className = 'typing';
+      el.id = 'typing-indicator';
+      el.innerHTML = '<span></span><span></span><span></span>';
+      chat.appendChild(el);
+      scrollToBottom();
+      return el;
+    }
+
+    function removeTyping() {
+      const el = document.getElementById('typing-indicator');
+      if (el) el.remove();
+    }
+
+    function isCameraQuery(text) {
+      const lower = text.toLowerCase();
+      return VISION_KEYWORDS.some(kw => lower.includes(kw));
+    }
+
+    function appendSnapshot(wrapper) {
+      const label = document.createElement('div');
+      label.className = 'snapshot-label';
+      label.textContent = 'Live camera snapshot';
+      const img = document.createElement('img');
+      img.className = 'camera-snapshot';
+      img.src = '/snapshot?t=' + Date.now();
+      img.alt = 'Camera snapshot';
+      img.onerror = () => { label.textContent = 'Camera snapshot unavailable'; };
+      wrapper.appendChild(label);
+      wrapper.appendChild(img);
+    }
+
+    function appendBotMessage(data, showCamera) {
+      removeTyping();
+      const wrapper = document.createElement('div');
+      wrapper.className = 'message bot';
+      if (showCamera) appendSnapshot(wrapper);
+      const summary = document.createElement('div');
+      summary.className = 'summary-card';
+      summary.textContent = data.summary || 'No answer available.';
+      wrapper.appendChild(summary);
+      if (data.sources && data.sources.length > 0) {
+        const sourcesWrap = document.createElement('div');
+        sourcesWrap.className = 'sources';
+        const label = document.createElement('div');
+        label.className = 'sources-label';
+        label.textContent = 'Sources';
+        sourcesWrap.appendChild(label);
+        data.sources.forEach(src => {
+          const a = document.createElement('a');
+          a.className = 'source-card';
+          a.href = src.url || '#';
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          const title = document.createElement('div');
+          title.className = 'source-title';
+          title.textContent = src.title || 'Untitled';
+          a.appendChild(title);
+          if (src.domain) { const d = document.createElement('div'); d.className = 'source-domain'; d.textContent = src.domain; a.appendChild(d); }
+          if (src.snippet) { const s = document.createElement('div'); s.className = 'source-snippet'; s.textContent = src.snippet; a.appendChild(s); }
+          sourcesWrap.appendChild(a);
+        });
+        wrapper.appendChild(sourcesWrap);
+      }
+      chat.appendChild(wrapper);
+      scrollToBottom();
+    }
+
+    function appendErrorMessage(msg) {
+      removeTyping();
+      const wrapper = document.createElement('div');
+      wrapper.className = 'message bot';
+      const card = document.createElement('div');
+      card.className = 'summary-card error';
+      card.textContent = msg;
+      wrapper.appendChild(card);
+      chat.appendChild(wrapper);
+      scrollToBottom();
+    }
+
+    async function showSnapshot() {
+      cameraBtn.disabled = true;
+      const wrapper = document.createElement('div');
+      wrapper.className = 'message bot';
+      appendSnapshot(wrapper);
+      chat.appendChild(wrapper);
+      scrollToBottom();
+      setTimeout(() => { cameraBtn.disabled = false; }, 2000);
+    }
+
+    async function sendMessage() {
+      const text = input.value.trim();
+      if (!text) return;
+      const showCamera = isCameraQuery(text);
+      input.value = ''; input.style.height = 'auto';
+      sendBtn.disabled = true; input.disabled = true;
+      appendUserMessage(text);
+      showTyping();
+      try {
+        const res = await fetch('/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: text })
+        });
+        const json = await res.json();
+        if (!res.ok || json.type === 'error') {
+          appendErrorMessage(json.message || 'Server error (' + res.status + ')');
+        } else {
+          appendBotMessage(json.data, showCamera);
+        }
+      } catch (err) {
+        appendErrorMessage('Could not reach the server. Please try again.');
+        console.error(err);
+      } finally {
+        sendBtn.disabled = false; input.disabled = false; input.focus();
+      }
+    }
+  </script>
 </body>
 </html>
