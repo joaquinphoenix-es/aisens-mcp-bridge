@@ -40,15 +40,15 @@
 </head>
 <body>
   <header>
-    <div class="status-dot"></div>
+    <div class="status-dot" id="statusDot"></div>
     <h1>AISENS</h1>
-    <span class="status-label" id="statusLabel">Conectando...</span>
+    <span class="status-label" id="statusLabel">Connecting...</span>
   </header>
   <div id="chat"></div>
   <div class="input-row">
-    <textarea id="userInput" rows="1" placeholder="Escribe tu mensaje..."></textarea>
-    <button class="btn" id="cameraBtn" title="Capturar imagen de la camara">&#128247;</button>
-    <button class="btn" id="sendBtn">Enviar &#9658;</button>
+    <textarea id="userInput" rows="1" placeholder="Type your message..."></textarea>
+    <button class="btn" id="cameraBtn" title="Capture camera image">&#128247;</button>
+    <button class="btn" id="sendBtn">Send &#9658;</button>
   </div>
 
   <script>
@@ -56,6 +56,7 @@
     const chat = document.getElementById('chat');
     const input = document.getElementById('userInput');
     const statusLabel = document.getElementById('statusLabel');
+    const statusDot = document.getElementById('statusDot');
 
     let sessionId = localStorage.getItem('aisens_session') || ('s' + Date.now());
     localStorage.setItem('aisens_session', sessionId);
@@ -63,16 +64,28 @@
     // ---- status check ----
     async function checkStatus() {
       try {
-        const r = await fetch(BRIDGE + '/status');
-        const d = await r.json();
-        statusLabel.textContent = d.status === 'ok' ? 'En linea' : 'Limitado';
-        statusLabel.style.color = d.status === 'ok' ? '#4caf50' : '#ff9800';
-      } catch { statusLabel.textContent = 'Sin conexion'; statusLabel.style.color = '#f44336'; }
+        const r = await fetch(BRIDGE + '/snapshot', {method: 'HEAD'});
+        if (r.ok || r.status === 200) {
+          statusLabel.textContent = 'Online';
+          statusLabel.style.color = '#4caf50';
+          statusLabel.style.borderColor = 'rgba(76,175,80,.3)';
+          statusDot.style.background = '#4caf50';
+          statusDot.style.boxShadow = '0 0 6px #4caf50';
+        } else {
+          throw new Error('not ok');
+        }
+      } catch {
+        statusLabel.textContent = 'Limited';
+        statusLabel.style.color = '#ff9800';
+        statusLabel.style.borderColor = 'rgba(255,152,0,.3)';
+        statusDot.style.background = '#ff9800';
+        statusDot.style.boxShadow = '0 0 6px #ff9800';
+      }
     }
     checkStatus();
 
     // ---- helpers ----
-    function appendMessage(role, html, isHTML = false) {
+    function appendMessage(role, text) {
       const wrap = document.createElement('div');
       wrap.className = 'message ' + role;
       if (role === 'bot') {
@@ -80,12 +93,11 @@
         card.className = 'summary-card';
         const txt = document.createElement('div');
         txt.className = 'answer-text';
-        if (isHTML) txt.innerHTML = html;
-        else txt.textContent = html;
+        txt.textContent = text;
         card.appendChild(txt);
         wrap.appendChild(card);
       } else {
-        wrap.textContent = html;
+        wrap.textContent = text;
       }
       chat.appendChild(wrap);
       chat.scrollTop = chat.scrollHeight;
@@ -106,7 +118,7 @@
     }
 
     // ---- camera snapshot ----
-    async function captureAndShow(triggerText) {
+    async function captureAndShow() {
       showThinking();
       try {
         const url = BRIDGE + '/snapshot?t=' + Date.now();
@@ -119,15 +131,15 @@
         wrap.className = 'message bot';
         const card = document.createElement('div');
         card.className = 'summary-card';
-        card.innerHTML = '<div class="sources-label">Camara en vivo</div>' +
+        card.innerHTML = '<div class="sources-label">Live Camera</div>' +
           '<img class="camera-image" src="' + objURL + '" alt="Snapshot" />' +
-          '<div class="answer-text" style="margin-top:8px">Imagen capturada correctamente desde la camara AISENS.</div>';
+          '<div class="answer-text" style="margin-top:8px">Image captured from the AISENS camera.</div>';
         wrap.appendChild(card);
         chat.appendChild(wrap);
         chat.scrollTop = chat.scrollHeight;
       } catch (e) {
         removeThinking();
-        appendMessage('bot', 'No se pudo obtener la imagen de la camara: ' + e.message);
+        appendMessage('bot', 'Could not retrieve camera image: ' + e.message);
       }
     }
 
@@ -139,10 +151,9 @@
       input.style.height = 'auto';
       appendMessage('user', text);
 
-      // camera keywords
-      const camKeys = ['camara', 'camara', 'foto', 'imagen', 'snapshot', 'captura', 'camera', 'photo', 'picture', 'ver', 'muestra', 'show', 'capture'];
+      const camKeys = ['camera', 'camara', 'photo', 'foto', 'image', 'imagen', 'snapshot', 'capture', 'captura', 'show', 'muestra', 'picture', 'see', 'ver'];
       if (camKeys.some(k => text.toLowerCase().includes(k))) {
-        await captureAndShow(text);
+        await captureAndShow();
         return;
       }
 
@@ -158,12 +169,12 @@
         appendMessage('bot', d.response || d.message || JSON.stringify(d));
       } catch (e) {
         removeThinking();
-        appendMessage('bot', 'Error de conexion: ' + e.message);
+        appendMessage('bot', 'Connection error: ' + e.message);
       }
     }
 
     document.getElementById('sendBtn').addEventListener('click', sendMessage);
-    document.getElementById('cameraBtn').addEventListener('click', () => captureAndShow('manual'));
+    document.getElementById('cameraBtn').addEventListener('click', captureAndShow);
     input.addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
     });
