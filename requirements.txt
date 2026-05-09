@@ -5,3 +5,4 @@ websockets
 flask
 flask-cors
 gunicorn
+openai
