@@ -1,15 +1,22 @@
 from flask import Flask, send_from_directory, request, jsonify
 import os
+import base64
 from flask_cors import CORS
 import requests
 import logging
 from urllib.parse import urlparse
+from openai import OpenAI
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 TAVILY_API_KEY = os.environ.get('TAVILY_API_KEY', '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')
 PPLX_API_KEY = os.environ.get('PPLX_API_KEY', '')
+CAMERA_URL = os.environ.get('CAMERA_URL', 'http://192.168.1.153/snap.jpg')
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
+OPENAI_BASE_URL = os.environ.get('OPENAI_BASE_URL', 'https://api.openai.com/v1')
+
+openai_client = OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
 
 app = Flask(__name__, static_folder='web', static_url_path='')
 CORS(app)
@@ -141,6 +148,52 @@ def serve_index():
 @app.route('/health')
 def health():
     return jsonify({'status': 'ok', 'service': 'aisens-mcp-bridge'})
+
+@app.route('/vision', methods=['GET', 'POST'])
+def vision():
+    try:
+        if request.method == 'POST':
+            data = request.get_json(force=True) or {}
+            prompt = data.get('prompt', 'Describe what you see. If there is a person, describe their appearance and emotional state.')
+            cam_url = data.get('camera_url', CAMERA_URL)
+        else:
+            prompt = request.args.get('prompt', 'Describe what you see. If there is a person, describe their appearance and emotional state.')
+            cam_url = request.args.get('camera_url', CAMERA_URL)
+
+        if not OPENAI_API_KEY:
+            return jsonify({'type': 'error', 'message': 'OPENAI_API_KEY not configured'}), 500
+
+        logger.info('Fetching camera snapshot from: ' + cam_url)
+        cam_resp = requests.get(cam_url, timeout=10)
+        cam_resp.raise_for_status()
+        image_b64 = base64.b64encode(cam_resp.content).decode('utf-8')
+        content_type = cam_resp.headers.get('Content-Type', 'image/jpeg')
+
+        logger.info('Sending image to GPT-4o Vision')
+        completion = openai_client.chat.completions.create(
+            model='gpt-4o',
+            messages=[
+                {
+                    'role': 'user',
+                    'content': [
+                        {'type': 'text', 'text': prompt},
+                        {'type': 'image_url', 'image_url': {'url': f'data:{content_type};base64,{image_b64}'}}
+                    ]
+                }
+            ],
+            max_tokens=500
+        )
+        analysis = completion.choices[0].message.content.strip()
+        logger.info('Vision analysis complete')
+        return jsonify({'type': 'result', 'data': {'analysis': analysis, 'camera_url': cam_url}})
+
+    except requests.exceptions.Timeout:
+        return jsonify({'type': 'error', 'message': 'Camera or API timed out'}), 504
+    except requests.exceptions.ConnectionError:
+        return jsonify({'type': 'error', 'message': 'Cannot reach camera at ' + cam_url}), 502
+    except Exception as e:
+        logger.error('Vision error: ' + str(e))
+        return jsonify({'type': 'error', 'message': 'Vision error: ' + str(e)}), 500
 
 @app.route('/chat', methods=['POST'])
 def chat():
