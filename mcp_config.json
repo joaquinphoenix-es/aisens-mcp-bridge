@@ -9,6 +9,11 @@
       "type": "stdio",
       "command": "python",
       "args": ["aisens_launcher_tool.py"]
+    },
+    "aisens-vision": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["vision_tool.py"]
     }
   }
 }
