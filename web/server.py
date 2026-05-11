@@ -7,7 +7,6 @@ from datetime import datetime
 
 app = Flask(__name__, static_folder='.')
 
-# Browser-like headers to bypass datacenter IP blocks
 BROWSER_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -19,8 +18,13 @@ BROWSER_HEADERS = {
 }
 
 
+def normalize(text):
+    """Collapse multiple whitespace into single spaces and strip."""
+    return re.sub(r'\s+', ' ', text or '').strip()
+
+
 def clean_text(text):
-    """Remove markdown headings and clean up text for use in summaries."""
+    """Remove markdown headings and collapse blank lines."""
     text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
     text = re.sub(r'\n{3,}', '\n\n', text)
     return text.strip()
@@ -39,30 +43,29 @@ def extract_sentences(text, max_chars=300):
 
 
 def search_ddg_html(query, max_results=5):
-    """Scrape DuckDuckGo HTML search results directly (works from cloud IPs)."""
+    """Scrape DuckDuckGo HTML results. Uses separator=' ' to keep word spaces."""
     try:
         session = requests.Session()
-        # First request to get a vqd token
-        params = {'q': query, 'b': '', 'kl': 'en-us'}
         r = session.post(
             'https://html.duckduckgo.com/html/',
-            data=params,
+            data={'q': query, 'b': '', 'kl': 'en-us'},
             headers=BROWSER_HEADERS,
             timeout=15
         )
         r.raise_for_status()
-        soup = BeautifulSoup(r.text, 'html.parser')
+        soup = BeautifulSoup(r.text, 'lxml')
         results = []
         for result in soup.select('.result__body')[:max_results]:
             title_el = result.select_one('.result__title')
             snippet_el = result.select_one('.result__snippet')
             url_el = result.select_one('.result__url')
-            title = title_el.get_text(strip=True) if title_el else ''
-            snippet = snippet_el.get_text(strip=True) if snippet_el else ''
+            # Use separator=' ' so words between tags keep their spaces
+            title = normalize(title_el.get_text(separator=' ')) if title_el else ''
+            snippet = normalize(snippet_el.get_text(separator=' ')) if snippet_el else ''
             url = ''
             if url_el:
-                url = url_el.get_text(strip=True)
-                if not url.startswith('http'):
+                url = normalize(url_el.get_text(separator=' '))
+                if url and not url.startswith('http'):
                     url = 'https://' + url
             if title or snippet:
                 results.append({'title': title, 'content': snippet, 'url': url})
@@ -72,8 +75,7 @@ def search_ddg_html(query, max_results=5):
 
 
 def search_searxng(query, max_results=5):
-    """Search using a public SearXNG instance as fallback (no API key needed)."""
-    # List of reliable public SearXNG instances
+    """Search via public SearXNG instances (JSON API, no key needed)."""
     instances = [
         'https://searx.be',
         'https://search.mdosch.de',
@@ -92,8 +94,8 @@ def search_searxng(query, max_results=5):
                 results = []
                 for item in data.get('results', [])[:max_results]:
                     results.append({
-                        'title': item.get('title', ''),
-                        'content': item.get('content', ''),
+                        'title': normalize(item.get('title', '')),
+                        'content': normalize(item.get('content', '')),
                         'url': item.get('url', '')
                     })
                 if results:
@@ -104,22 +106,18 @@ def search_searxng(query, max_results=5):
 
 
 def web_search(query):
-    """Search the web: try DuckDuckGo HTML scrape first, then SearXNG fallback."""
+    """Try DDG HTML scrape first, then SearXNG fallback."""
     results = search_ddg_html(query)
     if not results:
         results = search_searxng(query)
     if not results:
         return None, []
-    answer = results[0].get('content', '') if results else ''
-    return answer.strip(), results
+    answer = results[0].get('content', '')
+    return answer, results
 
 
 def build_reply(answer, results):
-    """
-    Build a structured JSON-serialisable reply with:
-      - summary: first result snippet (cleaned)
-      - sources: list of {title, snippet, url, domain}
-    """
+    """Build structured JSON reply: summary + sources list."""
     summary = clean_text(answer) if answer and len(answer) > 15 else ''
     sources = []
     seen_titles = set()
@@ -149,10 +147,7 @@ def build_reply(answer, results):
             'url': url,
             'domain': domain
         })
-    return {
-        'summary': summary,
-        'sources': sources
-    }
+    return {'summary': summary, 'sources': sources}
 
 
 @app.route('/')
@@ -168,7 +163,7 @@ def chat():
         return jsonify({'type': 'error', 'message': 'Please send a message.'})
     answer, results = web_search(user_message)
     if answer is None:
-        return jsonify({'type': 'error', 'message': 'Web search unavailable. All search providers failed.'})
+        return jsonify({'type': 'error', 'message': 'Web search unavailable. All providers failed.'})
     reply = build_reply(answer, results)
     return jsonify({'type': 'result', 'data': reply})
 
