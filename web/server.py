@@ -1,11 +1,9 @@
 import os
 import re
 from flask import Flask, request, jsonify, send_from_directory
-import requests
 from datetime import datetime
 
 app = Flask(__name__, static_folder='.')
-TAVILY_API_KEY = os.environ.get('TAVILY_API_KEY', '')
 
 
 def clean_text(text):
@@ -30,49 +28,41 @@ def extract_sentences(text, max_chars=300):
 
 
 def web_search(query):
-    """Search the web using Tavily."""
-    if not TAVILY_API_KEY:
-        return None, []
+    """Search the web using DuckDuckGo (no API key required)."""
     try:
-        r = requests.post(
-            'https://api.tavily.com/search',
-            json={
-                'api_key': TAVILY_API_KEY,
-                'query': query,
-                'search_depth': 'advanced',
-                'max_results': 5,
-                'include_answer': True,
-                'include_raw_content': False
-            },
-            timeout=20
-        )
-        data = r.json()
-        answer = data.get('answer', '') or ''
-        results = data.get('results', [])
-        return answer.strip(), results
-    except Exception:
+        from duckduckgo_search import DDGS
+        results_list = []
+        answer = ''
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=5))
+        for r in results:
+            results_list.append({
+                'title': r.get('title', ''),
+                'content': r.get('body', ''),
+                'url': r.get('href', '')
+            })
+        # Build a simple answer from first result
+        if results_list:
+            answer = results_list[0].get('content', '')
+        return answer.strip(), results_list
+    except Exception as e:
         return None, []
 
 
 def build_reply(answer, results):
     """
     Build a structured JSON-serialisable reply with:
-      - summary: the Tavily answer (cleaned)
+      - summary: first result content (cleaned)
       - sources: list of {title, snippet, url}
     """
-    # Clean the answer
     summary = clean_text(answer) if answer and len(answer) > 15 else ''
-
     sources = []
     seen_titles = set()
     seen_urls = set()
-
     for res in results[:5]:
         title = (res.get('title') or '').strip()
         content = (res.get('content') or '').strip()
         url = (res.get('url') or '').strip()
-
-        # Deduplicate by URL and title
         url_key = url.split('?')[0].rstrip('/')
         title_key = title.lower()[:60]
         if url_key in seen_urls or title_key in seen_titles:
@@ -81,24 +71,19 @@ def build_reply(answer, results):
             seen_urls.add(url_key)
         if title_key:
             seen_titles.add(title_key)
-
         snippet = extract_sentences(content, 250) if content else ''
-
-        # Try to extract domain for display
         domain = ''
         try:
             from urllib.parse import urlparse
             domain = urlparse(url).netloc.replace('www.', '')
         except Exception:
             pass
-
         sources.append({
             'title': title,
             'snippet': snippet,
             'url': url,
             'domain': domain
         })
-
     return {
         'summary': summary,
         'sources': sources
@@ -116,11 +101,9 @@ def chat():
     user_message = (data.get('message') or '').strip()
     if not user_message:
         return jsonify({'type': 'error', 'message': 'Please send a message.'})
-
     answer, results = web_search(user_message)
     if answer is None:
-        return jsonify({'type': 'error', 'message': 'Web search unavailable. Please check TAVILY_API_KEY.'})
-
+        return jsonify({'type': 'error', 'message': 'Web search unavailable. DuckDuckGo search failed.'})
     reply = build_reply(answer, results)
     return jsonify({'type': 'result', 'data': reply})
 
@@ -128,16 +111,9 @@ def chat():
 @app.route('/debug')
 def debug():
     query = request.args.get('q', 'news Spain')
-    if not TAVILY_API_KEY:
-        return jsonify({'error': 'No TAVILY_API_KEY'})
     try:
-        r = requests.post(
-            'https://api.tavily.com/search',
-            json={'api_key': TAVILY_API_KEY, 'query': query,
-                  'search_depth': 'basic', 'max_results': 3, 'include_answer': True},
-            timeout=20
-        )
-        return jsonify(r.json())
+        answer, results = web_search(query)
+        return jsonify({'answer': answer, 'results': results})
     except Exception as e:
         return jsonify({'error': str(e)})
 
