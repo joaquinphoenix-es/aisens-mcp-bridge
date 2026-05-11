@@ -52,28 +52,26 @@
   </div>
 
   <script>
-            const BRIDGE = 'https://airy-wonder-production-0d42.up.railway.app';
+    const BRIDGE = '';
     const chat = document.getElementById('chat');
     const input = document.getElementById('userInput');
     const statusLabel = document.getElementById('statusLabel');
     const statusDot = document.getElementById('statusDot');
-
     let sessionId = localStorage.getItem('aisens_session') || ('s' + Date.now());
     localStorage.setItem('aisens_session', sessionId);
 
     // ---- status check ----
     async function checkStatus() {
       try {
-        const r = await fetch(BRIDGE + '/snapshot', {method: 'HEAD'});
-        if (r.ok || r.status === 200) {
+        const r = await fetch(BRIDGE + '/health', {method: 'GET'});
+        const data = await r.json();
+        if (data.status === 'ok') {
           statusLabel.textContent = 'Online';
           statusLabel.style.color = '#4caf50';
           statusLabel.style.borderColor = 'rgba(76,175,80,.3)';
           statusDot.style.background = '#4caf50';
           statusDot.style.boxShadow = '0 0 6px #4caf50';
-        } else {
-          throw new Error('not ok');
-        }
+        } else { throw new Error('not ok'); }
       } catch {
         statusLabel.textContent = 'Limited';
         statusLabel.style.color = '#ff9800';
@@ -112,6 +110,7 @@
       chat.appendChild(wrap);
       chat.scrollTop = chat.scrollHeight;
     }
+
     function removeThinking() {
       const t = document.getElementById('thinking');
       if (t) t.remove();
@@ -150,13 +149,11 @@
       input.value = '';
       input.style.height = 'auto';
       appendMessage('user', text);
-
       const camKeys = ['camera', 'camara', 'photo', 'foto', 'image', 'imagen', 'snapshot', 'capture', 'captura', 'show', 'muestra', 'picture', 'see', 'ver'];
       if (camKeys.some(k => text.toLowerCase().includes(k))) {
         await captureAndShow();
         return;
       }
-
       showThinking();
       try {
         const r = await fetch(BRIDGE + '/chat', {
@@ -166,8 +163,8 @@
         });
         const d = await r.json();
         removeThinking();
-                    const botText = (d.type === 'result' && d.data) ? (d.data.summary || '') : (d.message || JSON.stringify(d));
-                    appendMessage('bot', botText);
+        const botText = (d.type === 'result' && d.data) ? (d.data.summary || 'No answer found.') : (d.message || JSON.stringify(d));
+        appendMessage('bot', botText);
       } catch (e) {
         removeThinking();
         appendMessage('bot', 'Connection error: ' + e.message);
