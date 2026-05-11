@@ -52,7 +52,7 @@
   </div>
 
   <script>
-    const BRIDGE = 'https://aisens-mcp-bridge-production.up.railway.app';
+            const BRIDGE = 'https://airy-wonder-production-0d42.up.railway.app';
     const chat = document.getElementById('chat');
     const input = document.getElementById('userInput');
     const statusLabel = document.getElementById('statusLabel');
@@ -166,7 +166,8 @@
         });
         const d = await r.json();
         removeThinking();
-        appendMessage('bot', d.response || d.message || JSON.stringify(d));
+                    const botText = (d.type === 'result' && d.data) ? (d.data.summary || '') : (d.message || JSON.stringify(d));
+                    appendMessage('bot', botText);
       } catch (e) {
         removeThinking();
         appendMessage('bot', 'Connection error: ' + e.message);
