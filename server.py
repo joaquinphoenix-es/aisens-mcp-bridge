@@ -123,7 +123,7 @@ def search_ddg_html(query, max_results=5):
             'https://html.duckduckgo.com/html/',
             data={'q': query, 'b': '', 'kl': 'en-us'},
             headers=BROWSER_HEADERS,
-            timeout=8,
+            timeout=4,  # REDUCED FROM 8s
         )
         r.raise_for_status()
         soup = BeautifulSoup(r.text, 'lxml')
@@ -141,11 +141,14 @@ def search_ddg_html(query, max_results=5):
     except Exception as e:
         logger.warning(f'DDG HTML search failed: {e}')
         return []
+
 def synthesize_answer(query, results):
     snippets = ' '.join(r['snippet'] for r in results if r['snippet'])
     if not snippets:
         return results[0].get('title', '') if results else ''
+    
     fallback = extract_sentences(snippets, max_chars=350)
+    
     def _call():
         system = (
             'You are AISENS, a helpful AI assistant for Alexa voice. '
@@ -153,21 +156,22 @@ def synthesize_answer(query, results):
             'Do not use markdown, bullet points, or citation numbers. '
             'Write in plain spoken English.'
         )
-        msg = f'Question: {query}\n\nContext from web: {snippets[:1500]}'
+        msg = f'Question: {query}\n\nContext from web: {snippets[:800]}'  # REDUCED FROM 1500
         resp = openai_client.chat.completions.create(
             model='gpt-4o-mini',
             messages=[
                 {'role': 'system', 'content': system},
                 {'role': 'user', 'content': msg},
             ],
-            max_tokens=200,
+            max_tokens=120,  # REDUCED FROM 200
             temperature=0.3,
         )
         return resp.choices[0].message.content.strip()
+    
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
             future = ex.submit(_call)
-            return future.result(timeout=3.5)
+            return future.result(timeout=2.0)  # REDUCED FROM 3.5s
     except Exception as e:
         logger.warning(f'OpenAI synthesis failed or timed out: {e}')
         return fallback
@@ -177,13 +181,16 @@ def ddg_search(query):
     if cached:
         logger.info(f'Cache hit: {query}')
         return cached
+    
     results = search_ddg_html(query)
     if not results:
         logger.warning('DDG returned no results, falling back to OpenAI')
         return openai_search(query)
+    
     summary = synthesize_answer(query, results)
     if not summary:
         summary = results[0].get('title', 'I found some results but could not extract a summary.')
+    
     sources = [{'url': r['url'], 'title': r['title']} for r in results if r['url']]
     result = (summary, sources)
     cache_set('ddg:' + query, result)
@@ -247,9 +254,22 @@ def openai_search(query):
         return 'I was unable to find an answer to that question right now. Please try again.', []
 
 def search_and_reply(query):
-    if PPLX_API_KEY:
-        return perplexity_search(query)
-    return ddg_search(query)
+    # ADDED: 6s hard timeout for the entire search path to stay under Alexa's 8s budget
+    def _search():
+        if PPLX_API_KEY:
+            return perplexity_search(query)
+        return ddg_search(query)
+    
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            future = ex.submit(_search)
+            return future.result(timeout=6.0)
+    except concurrent.futures.TimeoutError:
+        logger.warning(f'Search timed out after 6s for: {query}')
+        return 'I am still searching for that. Please ask again in a moment.', []
+    except Exception as e:
+        logger.error(f'Search error: {e}')
+        return 'Something went wrong. Please try again.', []
 
 # --- Conversational reply ---
 def conversational_reply(query):
@@ -257,6 +277,7 @@ def conversational_reply(query):
     # Instant reply for common greetings (no API call)
     if lower in INSTANT_REPLIES:
         return INSTANT_REPLIES[lower]
+    
     # Try OpenAI for more complex conversational messages
     system = (
         'You are AISENS, a friendly AI assistant for Alexa. '
@@ -266,6 +287,7 @@ def conversational_reply(query):
     answer, _ = perplexity_chat(system, query, use_search=False)
     if answer:
         return answer
+    
     try:
         response = openai_client.chat.completions.create(
             model='gpt-4o-mini',
@@ -291,12 +313,14 @@ def chat():
     query = (data.get('message') or data.get('query') or '').strip()
     if not query:
         return jsonify({'type': 'error', 'message': 'No query provided'}), 400
+    
     logger.info(f'Query received: {query}')
     try:
         if is_conversational(query):
             logger.info('Routing as conversational')
             reply = conversational_reply(query)
             return jsonify({'type': 'result', 'data': {'summary': reply, 'sources': []}})
+        
         logger.info('Routing as search')
         summary, sources = search_and_reply(query)
         return jsonify({'type': 'result', 'data': {'summary': summary, 'sources': sources}})
