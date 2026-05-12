@@ -38,31 +38,33 @@ def cache_set(key, value):
     _cache[key] = {'value': value, 'ts': time.time()}
 
 # --- Conversational pattern detection ---
-CONVERSATIONAL_PATTERNS = [
-    'hello', 'hi ', 'hey ', 'good morning', 'good afternoon', 'good evening',
-    'good night', 'how are you', 'how r you', "what's up", 'whats up',
-    'who are you', 'what are you', 'what can you do', 'introduce yourself',
-    'your name', 'nice to meet', 'thank you', 'thanks', 'bye', 'goodbye',
-    'see you', 'are you ok', 'are you alive', 'are you real', 'are you human',
-    'do you understand', 'can you help', 'help me',
-]
+# Only explicit greetings/small-talk are treated as conversational.
+# Everything else (including short topic queries) goes to search.
+CONVERSATIONAL_EXACT = {
+    'hello', 'hi', 'hey', 'bye', 'goodbye', 'thanks', 'thank you',
+    'good morning', 'good afternoon', 'good evening', 'good night',
+    'how are you', 'how r you', "what's up", 'whats up',
+    'who are you', 'what are you', 'what can you do',
+    'introduce yourself', 'nice to meet you', 'see you',
+    'are you ok', 'are you alive', 'are you real', 'are you human',
+}
 
-SEARCH_KEYWORDS = [
-    'price', 'news', 'stock', 'weather', 'score', 'who won',
-    'latest', 'what is', 'what are', 'what was', 'what will',
-    'how does', 'how do', 'how much', 'how many', 'why is',
-    'why are', 'when is', 'when did', 'where is', 'where are',
-    'who is', 'who was', 'define', 'explain', 'tell me about',
-    'search for', 'look up', 'find out',
+CONVERSATIONAL_STARTS = [
+    'hello ', 'hi ', 'hey ', 'good morning', 'good afternoon',
+    'good evening', 'good night', 'how are you', 'how r you',
+    'nice to meet', 'thank you', 'thanks ',
 ]
 
 def is_conversational(text):
     lower = text.lower().strip()
-    if any(kw in lower for kw in SEARCH_KEYWORDS):
-        return False
-    if len(lower.split()) <= 3:
+    # Exact match check
+    if lower in CONVERSATIONAL_EXACT:
         return True
-    return any(lower.startswith(pat) or (' ' + pat) in lower for pat in CONVERSATIONAL_PATTERNS)
+    # Starts-with check for greetings
+    if any(lower.startswith(pat) for pat in CONVERSATIONAL_STARTS):
+        return True
+    # Default: treat as a search query
+    return False
 
 # --- DuckDuckGo HTML search ---
 BROWSER_HEADERS = {
@@ -124,7 +126,6 @@ def ddg_search(query):
     if not results:
         logger.warning('DDG returned no results, falling back to OpenAI')
         return openai_search(query)
-    # Build a natural language summary from snippets
     combined = ' '.join(r['snippet'] for r in results if r['snippet'])
     summary = extract_sentences(combined, max_chars=350)
     if not summary:
@@ -169,7 +170,7 @@ def perplexity_search(query):
     sources = [{'url': c, 'title': urlparse(c).netloc} for c in (citations or [])]
     return answer, sources
 
-# --- OpenAI search fallback ---
+# --- OpenAI fallback ---
 def openai_search(query):
     try:
         system = (
