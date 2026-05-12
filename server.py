@@ -141,6 +141,32 @@ def search_ddg_html(query, max_results=5):
         logger.warning(f'DDG HTML search failed: {e}')
         return []
 
+def synthesize_answer(query, results):
+    snippets = ' '.join(r['snippet'] for r in results if r['snippet'])
+    if not snippets:
+        return results[0].get('title', '') if results else ''
+    try:
+        system = (
+            'You are AISENS, a helpful AI assistant for Alexa voice. '
+            'Answer the question directly in 2-3 clear sentences using the context provided. '
+            'Do not use markdown, bullet points, or citation numbers. '
+            'Write in plain spoken English.'
+        )
+        user_msg = f'Question: {query}\n\nContext from web: {snippets[:1500]}'
+        response = openai_client.chat.completions.create(
+            model='gpt-4o-mini',
+            messages=[
+                {'role': 'system', 'content': system},
+                {'role': 'user', 'content': user_msg},
+            ],
+            max_tokens=200,
+            temperature=0.3,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        logger.warning(f'OpenAI synthesis failed: {e}')
+        return extract_sentences(snippets, max_chars=350)
+
 def ddg_search(query):
     cached = cache_get('ddg:' + query)
     if cached:
@@ -150,8 +176,7 @@ def ddg_search(query):
     if not results:
         logger.warning('DDG returned no results, falling back to OpenAI')
         return openai_search(query)
-    combined = ' '.join(r['snippet'] for r in results if r['snippet'])
-    summary = extract_sentences(combined, max_chars=350)
+    summary = synthesize_answer(query, results)
     if not summary:
         summary = results[0].get('title', 'I found some results but could not extract a summary.')
     sources = [{'url': r['url'], 'title': r['title']} for r in results if r['url']]
