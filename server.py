@@ -38,8 +38,6 @@ def cache_set(key, value):
     _cache[key] = {'value': value, 'ts': time.time()}
 
 # --- Conversational pattern detection ---
-# Only explicit greetings/small-talk are treated as conversational.
-# Everything else (including short topic queries) goes to search.
 CONVERSATIONAL_EXACT = {
     'hello', 'hi', 'hey', 'bye', 'goodbye', 'thanks', 'thank you',
     'good morning', 'good afternoon', 'good evening', 'good night',
@@ -55,16 +53,43 @@ CONVERSATIONAL_STARTS = [
     'nice to meet', 'thank you', 'thanks ',
 ]
 
+# Quick instant replies for common greetings (no API call needed)
+INSTANT_REPLIES = {
+    'hello': 'Hello! I am AISENS. What would you like to know?',
+    'hi': 'Hi there! I am AISENS. Ask me anything!',
+    'hey': 'Hey! I am AISENS. What can I help you with?',
+    'bye': 'Goodbye! Have a great day!',
+    'goodbye': 'Goodbye! Have a great day!',
+    'thanks': 'You are welcome!',
+    'thank you': 'You are welcome!',
+    'how are you': 'I am doing great, thank you for asking! What can I help you find?',
+    'good morning': 'Good morning! What would you like to know today?',
+    'good afternoon': 'Good afternoon! How can I help you?',
+    'good evening': 'Good evening! What can I find for you?',
+    'who are you': 'I am AISENS, your AI-powered search assistant. Ask me anything!',
+    'what are you': 'I am AISENS, an AI assistant that can search the web and answer your questions.',
+    'what can you do': 'I can search the web and answer your questions. Just ask me anything!',
+    "what's up": 'All good! What would you like to search for?',
+    'whats up': 'All good! What would you like to search for?',
+}
+
 def is_conversational(text):
     lower = text.lower().strip()
-    # Exact match check
     if lower in CONVERSATIONAL_EXACT:
         return True
-    # Starts-with check for greetings
     if any(lower.startswith(pat) for pat in CONVERSATIONAL_STARTS):
         return True
-    # Default: treat as a search query
     return False
+
+# --- Text cleaning for speech ---
+def clean_for_speech(text):
+    # Remove Wikipedia-style citations like [1], [14], etc.
+    text = re.sub(r'\[\d+\]', '', text)
+    # Remove markdown headers
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+    # Normalize whitespace
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
 
 # --- DuckDuckGo HTML search ---
 BROWSER_HEADERS = {
@@ -81,8 +106,7 @@ def normalize(text):
     return re.sub(r'\s+', ' ', text or '').strip()
 
 def extract_sentences(text, max_chars=350):
-    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
-    text = re.sub(r'\n{3,}', '\n\n', text).strip()
+    text = clean_for_speech(text)
     if len(text) <= max_chars:
         return text
     truncated = text[:max_chars]
@@ -199,6 +223,11 @@ def search_and_reply(query):
 
 # --- Conversational reply ---
 def conversational_reply(query):
+    lower = query.lower().strip()
+    # Instant reply for common greetings (no API call)
+    if lower in INSTANT_REPLIES:
+        return INSTANT_REPLIES[lower]
+    # Try OpenAI for more complex conversational messages
     system = (
         'You are AISENS, a friendly AI assistant for Alexa. '
         'For greetings and small talk, respond naturally and warmly in 1-2 sentences. '
@@ -219,7 +248,7 @@ def conversational_reply(query):
         )
         return response.choices[0].message.content.strip()
     except Exception:
-        return 'Hello! I am AISENS. Ask me anything and I will find the answer for you.'
+        return 'Hello! I am AISENS. What would you like to know?'
 
 # --- Routes ---
 @app.route('/health')
