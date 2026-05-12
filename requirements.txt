@@ -6,3 +6,5 @@ flask
 flask-cors
 gunicorn
 openai
+beautifulsoup4
+lxml
