@@ -184,12 +184,12 @@ def ddg_search(query):
     
     results = search_ddg_html(query)
     if not results:
-        logger.warning('DDG returned no results, falling back to OpenAI')
-        return openai_search(query)
+        # Simple fallback message when DDG fails
+        return 'I apologize, but I am unable to search the web right now. Please try again later.', []
     
-    summary = synthesize_answer(query, results)
-    if not summary:
-        summary = results[0].get('title', 'I found some results but could not extract a summary.')
+    # Return simple concatenated snippets without OpenAI processing
+    snippets = ' '.join(r['snippet'] for r in results if r['snippet'])
+    summary = extract_sentences(snippets, max_chars=350) if snippets else results[0].get('title', 'No summary available.')
     
     sources = [{'url': r['url'], 'title': r['title']} for r in results if r['url']]
     result = (summary, sources)
@@ -254,23 +254,10 @@ def openai_search(query):
         return 'I was unable to find an answer to that question right now. Please try again.', []
 
 def search_and_reply(query):
-    # ADDED: 6s hard timeout for the entire search path to stay under Alexa's 8s budget
-    def _search():
-        if PPLX_API_KEY:
-            return perplexity_search(query)
-        return ddg_search(query)
+    # Simplified: no timeout wrapper needed since we removed OpenAI synthesis
+    if PPLX_API_KEY:
+        return perplexity_search(query)
     
-    try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-            future = ex.submit(_search)
-            return future.result(timeout=6.0)
-    except concurrent.futures.TimeoutError:
-        logger.warning(f'Search timed out after 6s for: {query}')
-        return 'I am still searching for that. Please ask again in a moment.', []
-    except Exception as e:
-        logger.error(f'Search error: {e}')
-        return 'Something went wrong. Please try again.', []
-
 # --- Conversational reply ---
 def conversational_reply(query):
     lower = query.lower().strip()
