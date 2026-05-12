@@ -2,6 +2,7 @@ from flask import Flask, send_from_directory, request, jsonify
 import os
 import re
 import time
+import concurrent.futures
 import base64
 from flask_cors import CORS
 import requests
@@ -145,26 +146,30 @@ def synthesize_answer(query, results):
     snippets = ' '.join(r['snippet'] for r in results if r['snippet'])
     if not snippets:
         return results[0].get('title', '') if results else ''
+def _call_openai():
+            system = (
+                'You are AISENS, a helpful AI assistant for Alexa voice. '
+                'Answer the question directly in 2-3 clear sentences using the context provided. '
+                'Do not use markdown, bullet points, or citation numbers. '
+                'Write in plain spoken English.'
+            )
+            user_msg = f'Question: {query}\n\nContext from web: {snippets[:1500]}'
+            response = openai_client.chat.completions.create(
+                model='gpt-4o-mini',
+                messages=[
+                    {'role': 'system', 'content': system},
+                    {'role': 'user', 'content': user_msg},
+                ],
+                max_tokens=200,
+                temperature=0.3,
+            )
+            return response.choices[0].message.content.strip()
     try:
-        system = (
-            'You are AISENS, a helpful AI assistant for Alexa voice. '
-            'Answer the question directly in 2-3 clear sentences using the context provided. '
-            'Do not use markdown, bullet points, or citation numbers. '
-            'Write in plain spoken English.'
-        )
-        user_msg = f'Question: {query}\n\nContext from web: {snippets[:1500]}'
-        response = openai_client.chat.completions.create(
-            model='gpt-4o-mini',
-            messages=[
-                {'role': 'system', 'content': system},
-                {'role': 'user', 'content': user_msg},
-            ],
-            max_tokens=200,
-            temperature=0.3,
-        )
-        return response.choices[0].message.content.strip()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_call_openai)
+            return future.result(timeout=3.5)
     except Exception as e:
-        logger.warning(f'OpenAI synthesis failed: {e}')
+        logger.warning(f'OpenAI synthesis failed or timed out: {e}')
         return extract_sentences(snippets, max_chars=350)
 
 def ddg_search(query):
