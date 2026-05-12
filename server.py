@@ -306,13 +306,14 @@ def chat():
         if is_conversational(query):
             logger.info('Routing as conversational')
             reply = conversational_reply(query)
-            return jsonify({'type': 'result', 'data': {'summary': reply, 'sources': []}})
+            return jsonify({'type': 'result', 'data': {'summary': reply or 'Hello!', 'sources': []}})
         
         logger.info('Routing as search')
-        summary, sources = search_and_reply(query)
+        result = search_and_reply(query)
+        if result is None:
+            return jsonify({'type': 'error', 'message': 'Search failed'}), 500
+        summary, sources = result
         return jsonify({'type': 'result', 'data': {'summary': summary, 'sources': sources}})
-    except Exception as e:
-        logger.error(f'Chat error: {e}')
         return jsonify({'type': 'error', 'message': str(e)}), 500
 
 @app.route('/snap')
