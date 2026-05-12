@@ -141,36 +141,36 @@ def search_ddg_html(query, max_results=5):
     except Exception as e:
         logger.warning(f'DDG HTML search failed: {e}')
         return []
-
 def synthesize_answer(query, results):
     snippets = ' '.join(r['snippet'] for r in results if r['snippet'])
     if not snippets:
         return results[0].get('title', '') if results else ''
-def _call_openai():
-            system = (
-                'You are AISENS, a helpful AI assistant for Alexa voice. '
-                'Answer the question directly in 2-3 clear sentences using the context provided. '
-                'Do not use markdown, bullet points, or citation numbers. '
-                'Write in plain spoken English.'
-            )
-            user_msg = f'Question: {query}\n\nContext from web: {snippets[:1500]}'
-            response = openai_client.chat.completions.create(
-                model='gpt-4o-mini',
-                messages=[
-                    {'role': 'system', 'content': system},
-                    {'role': 'user', 'content': user_msg},
-                ],
-                max_tokens=200,
-                temperature=0.3,
-            )
-            return response.choices[0].message.content.strip()
+    fallback = extract_sentences(snippets, max_chars=350)
+    def _call():
+        system = (
+            'You are AISENS, a helpful AI assistant for Alexa voice. '
+            'Answer the question directly in 2-3 clear sentences using the context provided. '
+            'Do not use markdown, bullet points, or citation numbers. '
+            'Write in plain spoken English.'
+        )
+        msg = f'Question: {query}\n\nContext from web: {snippets[:1500]}'
+        resp = openai_client.chat.completions.create(
+            model='gpt-4o-mini',
+            messages=[
+                {'role': 'system', 'content': system},
+                {'role': 'user', 'content': msg},
+            ],
+            max_tokens=200,
+            temperature=0.3,
+        )
+        return resp.choices[0].message.content.strip()
     try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(_call_openai)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            future = ex.submit(_call)
             return future.result(timeout=3.5)
     except Exception as e:
         logger.warning(f'OpenAI synthesis failed or timed out: {e}')
-        return extract_sentences(snippets, max_chars=350)
+        return fallback
 
 def ddg_search(query):
     cached = cache_get('ddg:' + query)
