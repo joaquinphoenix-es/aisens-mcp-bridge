@@ -60,6 +60,15 @@
     let sessionId = localStorage.getItem('aisens_session') || ('s' + Date.now());
     localStorage.setItem('aisens_session', sessionId);
 
+        // TTS function to speak bot responses
+    function speakText(text) {
+        if ('speechSynthesis' in window) {
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'es-ES';
+            window.speechSynthesis.speak(utterance);
+        }
+    }
+
     // ---- status check ----
     async function checkStatus() {
       try {
@@ -165,6 +174,7 @@
         removeThinking();
         const botText = (d.type === 'result' && d.data) ? (d.data.summary || 'No answer found.') : (d.message || JSON.stringify(d));
         appendMessage('bot', botText);
+                    speakText(botText);
       } catch (e) {
         removeThinking();
         appendMessage('bot', 'Connection error: ' + e.message);
