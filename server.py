@@ -314,7 +314,9 @@ def chat():
             return jsonify({'type': 'error', 'message': 'Search failed'}), 500
         summary, sources = result
         return jsonify({'type': 'result', 'data': {'summary': summary, 'sources': sources}})
-            except Exception as e:
+    except Exception as e:
+        logger.error(f'Chat error: {e}')
+        return jsonify({'type': 'error', 'message': str(e)}), 500
 @app.route('/snap')
 def snap():
     try:
