@@ -310,7 +310,7 @@ def chat():
             return jsonify({'type': 'result', 'data': {'summary': reply or 'Hello!', 'sources': []}})
         
         logger.info('Routing as search')
-        result = search_and_reply(query)
+        result = search_and_reply(query) or openai_search(query)
         if result is None:
             return jsonify({'type': 'error', 'message': 'Search failed'}), 500
         summary, sources = result
