@@ -123,7 +123,7 @@ def search_ddg_html(query, max_results=5):
             'https://html.duckduckgo.com/html/',
             data={'q': query, 'b': '', 'kl': 'en-us'},
             headers=BROWSER_HEADERS,
-            timeout=4,  # REDUCED FROM 8s
+            timeout=10,
         )
         r.raise_for_status()
         soup = BeautifulSoup(r.text, 'lxml')
@@ -171,7 +171,7 @@ def synthesize_answer(query, results):
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
             future = ex.submit(_call)
-            return future.result(timeout=2.0)  # REDUCED FROM 3.5s
+            return future.result(timeout=8.0)
     except Exception as e:
         logger.warning(f'OpenAI synthesis failed or timed out: {e}')
         return fallback
@@ -201,7 +201,7 @@ def perplexity_chat(system, user_msg, use_search=False):
     if not PPLX_API_KEY:
         return None, []
     try:
-        model = 'llama-3.1-sonar-small-128k-online' if use_search else 'llama-3.1-sonar-small-128k-chat'
+        model = 'sonar' if use_search else 'sonar'
         pplx_client = OpenAI(api_key=PPLX_API_KEY, base_url='https://api.perplexity.ai')
         response = pplx_client.chat.completions.create(
             model=model,
