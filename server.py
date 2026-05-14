@@ -123,7 +123,7 @@ def search_ddg_html(query, max_results=5):
             'https://html.duckduckgo.com/html/',
             data={'q': query, 'b': '', 'kl': 'en-us'},
             headers=BROWSER_HEADERS,
-            timeout=10,
+            timeout=8,
         )
         r.raise_for_status()
         soup = BeautifulSoup(r.text, 'lxml')
@@ -201,7 +201,7 @@ def perplexity_chat(system, user_msg, use_search=False):
     if not PPLX_API_KEY:
         return None, []
     try:
-        model = 'sonar' if use_search else 'sonar'
+        model = 'llama-3.1-sonar-small-128k-online' if use_search else 'llama-3.1-sonar-small-128k-chat'
         pplx_client = OpenAI(api_key=PPLX_API_KEY, base_url='https://api.perplexity.ai')
         response = pplx_client.chat.completions.create(
             model=model,
