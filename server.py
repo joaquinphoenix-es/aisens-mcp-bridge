@@ -257,6 +257,7 @@ def search_and_reply(query):
     # Simplified: no timeout wrapper needed since we removed OpenAI synthesis
     if PPLX_API_KEY:
         return perplexity_search(query)
+        return ddg_search(query)
     
 # --- Conversational reply ---
 def conversational_reply(query):
