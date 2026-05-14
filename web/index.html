@@ -64,8 +64,7 @@
     function speakText(text) {
         if ('speechSynthesis' in window) {
             const utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = 'es-ES';
-            window.speechSynthesis.speak(utterance);
+      utterance.lang = 'en-GB';            window.speechSynthesis.speak(utterance);
         }
     }
 
