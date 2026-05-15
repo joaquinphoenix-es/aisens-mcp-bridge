@@ -19,6 +19,7 @@ CAMERA_URL = os.environ.get('CAMERA_URL', 'http://192.168.1.153/snap.jpg')
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
 OPENAI_BASE_URL = os.environ.get('OPENAI_BASE_URL', 'https://api.openai.com/v1')
 TAVILY_API_KEY = os.environ.get('TAVILY_API_KEY', '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')
+SYNTHESIS_MODEL = os.environ.get('SYNTHESIS_MODEL', 'gpt-4o')
 
 openai_client = OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
 
@@ -136,26 +137,27 @@ def synthesize_answer(query, context_text):
         return ''
     try:
         system = (
-            'You are AISENS, a helpful AI assistant. '
-            'Answer the user question thoroughly in 4 to 6 sentences using the context provided. '
-            'Be informative, detailed and conversational. '
-            'Do not use markdown, bullet points, or citation numbers. '
-            'Write in plain spoken English.'
+            "You are AISENS, a knowledgeable research assistant. "
+            "Using the provided context, write a comprehensive, detailed answer to the user's question. "
+            "Include background, key actors, current developments, and relevant nuance. "
+            "Aim for 8 to 12 sentences. Write in plain spoken British English. "
+            "Do not use markdown, bullet points, headings, or citation numbers. "
+            "If the context is insufficient, still answer using general knowledge and say what is uncertain."
         )
-        user_msg = f'Question: {query}\n\nContext from web: {context_text[:5000]}'
+        user_msg = f"Question: {query}\n\nContext:\n{context_text[:8000]}"
         response = openai_client.chat.completions.create(
-            model='gpt-4o-mini',
+            model=SYNTHESIS_MODEL,
             messages=[
                 {'role': 'system', 'content': system},
                 {'role': 'user', 'content': user_msg},
             ],
-            max_tokens=600,
-            temperature=0.3,
+            max_tokens=900,
+            temperature=0.4,
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
         logger.warning(f'OpenAI synthesis failed: {e}')
-        return extract_sentences(context_text, max_chars=800)
+        return extract_sentences(context_text, max_chars=1000)
 
 def tavily_reply(query):
     cached = cache_get('tavily:' + query)
@@ -167,16 +169,19 @@ def tavily_reply(query):
         return None
     results = data.get('results', []) or []
     tavily_answer = (data.get('answer') or '').strip()
-    # PASSTHROUGH: if Tavily's own answer is substantial, return it directly (parity with chatbot)
-    if tavily_answer and len(tavily_answer) >= 200:
-        summary = clean_for_speech(tavily_answer)
-    else:
-        snippets = ' '.join((r.get('content') or '') for r in results)
-        context = (tavily_answer + '\n\n' + snippets).strip()
-        summary = synthesize_answer(query, context) if context else ''
-        if not summary:
-            summary = tavily_answer or (results[0].get('content', '') if results else '')
-        summary = clean_for_speech(summary)
+    # Always expand via LLM (parity with XiaoZhi's GPT-5 post-processing)
+    snippets = '\n\n'.join(
+        f"Source: {r.get('title','')}\n{r.get('content','')}"
+        for r in results if r.get('content')
+    )
+    context = ''
+    if tavily_answer:
+        context += f"Tavily summary: {tavily_answer}\n\n"
+    context += f"Detailed sources:\n{snippets}"
+    summary = synthesize_answer(query, context)
+    if not summary:
+        summary = tavily_answer or (results[0].get('content', '') if results else '')
+    summary = clean_for_speech(summary)
     if not summary:
         return None
     sources = [{'url': r.get('url', ''), 'title': r.get('title', '')} for r in results if r.get('url')]
