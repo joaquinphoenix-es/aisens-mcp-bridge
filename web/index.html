@@ -195,7 +195,7 @@
       input.style.height = 'auto';
       appendMessage('user', text);
       const camKeys = ['camera', 'camara', 'photo', 'foto', 'image', 'imagen', 'snapshot', 'capture', 'captura', 'show', 'muestra', 'picture', 'see', 'ver'];
-      if (camKeys.some(k => text.toLowerCase().includes(k))) {
+      const camRe = new RegExp('\b(' + camKeys.join('|') + ')\b', 'i'); if (camRe.test(text)) {
         await captureAndShow();
         return;
       }
