@@ -18,6 +18,7 @@ PPLX_API_KEY = os.environ.get('PPLX_API_KEY', '')
 CAMERA_URL = os.environ.get('CAMERA_URL', 'http://192.168.1.153/snap.jpg')
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
 OPENAI_BASE_URL = os.environ.get('OPENAI_BASE_URL', 'https://api.openai.com/v1')
+TAVILY_API_KEY = os.environ.get('TAVILY_API_KEY', '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')
 
 openai_client = OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
 
@@ -53,7 +54,6 @@ CONVERSATIONAL_STARTS = [
     'nice to meet', 'thank you', 'thanks ',
 ]
 
-# Quick instant replies for common greetings (no API call needed)
 INSTANT_REPLIES = {
     'hello': 'Hello! I am AISENS. What would you like to know?',
     'hi': 'Hi there! I am AISENS. Ask me anything!',
@@ -81,17 +81,12 @@ def is_conversational(text):
         return True
     return False
 
-# --- Text cleaning for speech ---
 def clean_for_speech(text):
-    # Remove Wikipedia-style citations like [1], [14], etc.
     text = re.sub(r'\[\d+\]', '', text)
-    # Remove markdown headers
     text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
-    # Normalize whitespace
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
-# --- DuckDuckGo HTML search ---
 BROWSER_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -115,14 +110,85 @@ def extract_sentences(text, max_chars=350):
         return truncated[:last_dot + 1]
     return truncated.rstrip() + '...'
 
+# --- Tavily search (preferred, parity with XiaoZhi chatbot) ---
+def tavily_search_api(query, max_results=5):
+    if not TAVILY_API_KEY:
+        return None
+    try:
+        r = requests.post(
+            'https://api.tavily.com/search',
+            json={
+                'api_key': TAVILY_API_KEY,
+                'query': query,
+                'search_depth': 'advanced',
+                'include_answer': True,
+                'include_raw_content': False,
+                'max_results': max_results,
+            },
+            timeout=15,
+        )
+        r.raise_for_status()
+        return r.json()
+    except Exception as e:
+        logger.warning(f'Tavily API error: {e}')
+        return None
+
+def synthesize_answer(query, context_text):
+    if not context_text:
+        return ''
+    try:
+        system = (
+            'You are AISENS, a helpful AI assistant. '
+            'Answer the question directly in 3-4 clear sentences using the context provided. '
+            'Be informative and detailed but conversational. '
+            'Do not use markdown, bullet points, or citation numbers. '
+            'Write in plain spoken English.'
+        )
+        user_msg = f'Question: {query}\n\nContext from web: {context_text[:3000]}'
+        response = openai_client.chat.completions.create(
+            model='gpt-4o-mini',
+            messages=[
+                {'role': 'system', 'content': system},
+                {'role': 'user', 'content': user_msg},
+            ],
+            max_tokens=350,
+            temperature=0.3,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        logger.warning(f'OpenAI synthesis failed: {e}')
+        return extract_sentences(context_text, max_chars=500)
+
+def tavily_reply(query):
+    cached = cache_get('tavily:' + query)
+    if cached:
+        logger.info(f'Tavily cache hit: {query}')
+        return cached
+    data = tavily_search_api(query)
+    if not data:
+        return None
+    results = data.get('results', []) or []
+    tavily_answer = (data.get('answer') or '').strip()
+    snippets = ' '.join((r.get('content') or '') for r in results)
+    context = (tavily_answer + '\n\n' + snippets).strip()
+    summary = synthesize_answer(query, context) if context else ''
+    if not summary:
+        summary = tavily_answer or (results[0].get('content', '') if results else '')
+    if not summary:
+        return None
+    sources = [{'url': r.get('url', ''), 'title': r.get('title', '')} for r in results if r.get('url')]
+    result = (clean_for_speech(summary), sources)
+    cache_set('tavily:' + query, result)
+    return result
+
+# --- DuckDuckGo HTML fallback ---
 def search_ddg_html(query, max_results=5):
     try:
         session = requests.Session()
         r = session.post(
             'https://html.duckduckgo.com/html/',
             data={'q': query, 'b': '', 'kl': 'en-us'},
-            headers=BROWSER_HEADERS,
-            timeout=8,
+            headers=BROWSER_HEADERS, timeout=8,
         )
         r.raise_for_status()
         soup = BeautifulSoup(r.text, 'lxml')
@@ -141,42 +207,15 @@ def search_ddg_html(query, max_results=5):
         logger.warning(f'DDG HTML search failed: {e}')
         return []
 
-def synthesize_answer(query, results):
-    snippets = ' '.join(r['snippet'] for r in results if r['snippet'])
-    if not snippets:
-        return results[0].get('title', '') if results else ''
-    try:
-        system = (
-            'You are AISENS, a helpful AI assistant for Alexa voice. '
-            'Answer the question directly in 2-3 clear sentences using the context provided. '
-            'Do not use markdown, bullet points, or citation numbers. '
-            'Write in plain spoken English.'
-        )
-        user_msg = f'Question: {query}\n\nContext from web: {snippets[:1500]}'
-        response = openai_client.chat.completions.create(
-            model='gpt-4o-mini',
-            messages=[
-                {'role': 'system', 'content': system},
-                {'role': 'user', 'content': user_msg},
-            ],
-            max_tokens=200,
-            temperature=0.3,
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        logger.warning(f'OpenAI synthesis failed: {e}')
-        return extract_sentences(snippets, max_chars=350)
-
 def ddg_search(query):
     cached = cache_get('ddg:' + query)
     if cached:
-        logger.info(f'Cache hit: {query}')
         return cached
     results = search_ddg_html(query)
     if not results:
-        logger.warning('DDG returned no results, falling back to OpenAI')
         return openai_search(query)
-    summary = synthesize_answer(query, results)
+    snippets = ' '.join(r['snippet'] for r in results if r['snippet'])
+    summary = synthesize_answer(query, snippets) if snippets else ''
     if not summary:
         summary = results[0].get('title', 'I found some results but could not extract a summary.')
     sources = [{'url': r['url'], 'title': r['title']} for r in results if r['url']]
@@ -184,7 +223,7 @@ def ddg_search(query):
     cache_set('ddg:' + query, result)
     return result
 
-# --- Perplexity search (if key available) ---
+# --- Perplexity search (optional) ---
 def perplexity_chat(system, user_msg, use_search=False):
     if not PPLX_API_KEY:
         return None, []
@@ -197,7 +236,7 @@ def perplexity_chat(system, user_msg, use_search=False):
                 {'role': 'system', 'content': system},
                 {'role': 'user', 'content': user_msg},
             ],
-            max_tokens=300,
+            max_tokens=350,
             temperature=0.2,
         )
         answer = response.choices[0].message.content.strip()
@@ -210,12 +249,12 @@ def perplexity_chat(system, user_msg, use_search=False):
 def perplexity_search(query):
     system = (
         'You are AISENS, a friendly AI assistant with real-time web search. '
-        'Answer the user question directly and naturally in 2-4 sentences. '
+        'Answer the user question directly and naturally in 3-4 sentences. '
         'Do not use bullet points or markdown. Be conversational and informative.'
     )
     answer, citations = perplexity_chat(system, query, use_search=True)
     if not answer:
-        return ddg_search(query)
+        return None
     sources = [{'url': c, 'title': urlparse(c).netloc} for c in (citations or [])]
     return answer, sources
 
@@ -224,7 +263,7 @@ def openai_search(query):
     try:
         system = (
             'You are AISENS, a helpful AI assistant. '
-            'Answer the question directly in 2-3 sentences without bullet points or markdown.'
+            'Answer the question directly in 3-4 sentences without bullet points or markdown.'
         )
         response = openai_client.chat.completions.create(
             model='gpt-4o-mini',
@@ -232,29 +271,33 @@ def openai_search(query):
                 {'role': 'system', 'content': system},
                 {'role': 'user', 'content': query},
             ],
-            max_tokens=250,
+            max_tokens=300,
             temperature=0.3,
         )
-        answer = response.choices[0].message.content.strip()
-        return answer, []
+        return response.choices[0].message.content.strip(), []
     except Exception as e:
         logger.error(f'OpenAI search failed: {e}')
         return 'I was unable to find an answer to that question right now. Please try again.', []
 
 def search_and_reply(query):
+    # Priority 1: Tavily (parity with XiaoZhi chatbot)
+    tav = tavily_reply(query)
+    if tav and tav[0]:
+        return tav
+    # Priority 2: Perplexity (if key set)
     if PPLX_API_KEY:
-        return perplexity_search(query)
+        pplx = perplexity_search(query)
+        if pplx and pplx[0]:
+            return pplx
+    # Priority 3: DuckDuckGo + OpenAI synthesis
     return ddg_search(query)
 
-# --- Conversational reply ---
 def conversational_reply(query):
     lower = query.lower().strip()
-    # Instant reply for common greetings (no API call)
     if lower in INSTANT_REPLIES:
         return INSTANT_REPLIES[lower]
-    # Try OpenAI for more complex conversational messages
     system = (
-        'You are AISENS, a friendly AI assistant for Alexa. '
+        'You are AISENS, a friendly AI assistant. '
         'For greetings and small talk, respond naturally and warmly in 1-2 sentences. '
         'Do not use markdown or bullet points.'
     )
@@ -289,10 +332,8 @@ def chat():
     logger.info(f'Query received: {query}')
     try:
         if is_conversational(query):
-            logger.info('Routing as conversational')
             reply = conversational_reply(query)
             return jsonify({'type': 'result', 'data': {'summary': reply, 'sources': []}})
-        logger.info('Routing as search')
         summary, sources = search_and_reply(query)
         return jsonify({'type': 'result', 'data': {'summary': summary, 'sources': sources}})
     except Exception as e:
