@@ -25,9 +25,8 @@ openai_client = OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
 app = Flask(__name__, static_folder='web', static_url_path='')
 CORS(app)
 
-# --- Simple in-memory cache with TTL ---
 _cache = {}
-CACHE_TTL = 300  # 5 minutes
+CACHE_TTL = 300
 
 def cache_get(key):
     entry = _cache.get(key)
@@ -38,7 +37,6 @@ def cache_get(key):
 def cache_set(key, value):
     _cache[key] = {'value': value, 'ts': time.time()}
 
-# --- Conversational pattern detection ---
 CONVERSATIONAL_EXACT = {
     'hello', 'hi', 'hey', 'bye', 'goodbye', 'thanks', 'thank you',
     'good morning', 'good afternoon', 'good evening', 'good night',
@@ -100,7 +98,7 @@ BROWSER_HEADERS = {
 def normalize(text):
     return re.sub(r'\s+', ' ', text or '').strip()
 
-def extract_sentences(text, max_chars=350):
+def extract_sentences(text, max_chars=600):
     text = clean_for_speech(text)
     if len(text) <= max_chars:
         return text
@@ -110,8 +108,8 @@ def extract_sentences(text, max_chars=350):
         return truncated[:last_dot + 1]
     return truncated.rstrip() + '...'
 
-# --- Tavily search (preferred, parity with XiaoZhi chatbot) ---
-def tavily_search_api(query, max_results=5):
+# --- Tavily search (PRIMARY - parity with XiaoZhi chatbot) ---
+def tavily_search_api(query, max_results=8):
     if not TAVILY_API_KEY:
         return None
     try:
@@ -125,7 +123,7 @@ def tavily_search_api(query, max_results=5):
                 'include_raw_content': False,
                 'max_results': max_results,
             },
-            timeout=15,
+            timeout=20,
         )
         r.raise_for_status()
         return r.json()
@@ -139,25 +137,25 @@ def synthesize_answer(query, context_text):
     try:
         system = (
             'You are AISENS, a helpful AI assistant. '
-            'Answer the question directly in 3-4 clear sentences using the context provided. '
-            'Be informative and detailed but conversational. '
+            'Answer the user question thoroughly in 4 to 6 sentences using the context provided. '
+            'Be informative, detailed and conversational. '
             'Do not use markdown, bullet points, or citation numbers. '
             'Write in plain spoken English.'
         )
-        user_msg = f'Question: {query}\n\nContext from web: {context_text[:3000]}'
+        user_msg = f'Question: {query}\n\nContext from web: {context_text[:5000]}'
         response = openai_client.chat.completions.create(
             model='gpt-4o-mini',
             messages=[
                 {'role': 'system', 'content': system},
                 {'role': 'user', 'content': user_msg},
             ],
-            max_tokens=350,
+            max_tokens=600,
             temperature=0.3,
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
         logger.warning(f'OpenAI synthesis failed: {e}')
-        return extract_sentences(context_text, max_chars=500)
+        return extract_sentences(context_text, max_chars=800)
 
 def tavily_reply(query):
     cached = cache_get('tavily:' + query)
@@ -169,15 +167,20 @@ def tavily_reply(query):
         return None
     results = data.get('results', []) or []
     tavily_answer = (data.get('answer') or '').strip()
-    snippets = ' '.join((r.get('content') or '') for r in results)
-    context = (tavily_answer + '\n\n' + snippets).strip()
-    summary = synthesize_answer(query, context) if context else ''
-    if not summary:
-        summary = tavily_answer or (results[0].get('content', '') if results else '')
+    # PASSTHROUGH: if Tavily's own answer is substantial, return it directly (parity with chatbot)
+    if tavily_answer and len(tavily_answer) >= 200:
+        summary = clean_for_speech(tavily_answer)
+    else:
+        snippets = ' '.join((r.get('content') or '') for r in results)
+        context = (tavily_answer + '\n\n' + snippets).strip()
+        summary = synthesize_answer(query, context) if context else ''
+        if not summary:
+            summary = tavily_answer or (results[0].get('content', '') if results else '')
+        summary = clean_for_speech(summary)
     if not summary:
         return None
     sources = [{'url': r.get('url', ''), 'title': r.get('title', '')} for r in results if r.get('url')]
-    result = (clean_for_speech(summary), sources)
+    result = (summary, sources)
     cache_set('tavily:' + query, result)
     return result
 
@@ -223,7 +226,6 @@ def ddg_search(query):
     cache_set('ddg:' + query, result)
     return result
 
-# --- Perplexity search (optional) ---
 def perplexity_chat(system, user_msg, use_search=False):
     if not PPLX_API_KEY:
         return None, []
@@ -236,7 +238,7 @@ def perplexity_chat(system, user_msg, use_search=False):
                 {'role': 'system', 'content': system},
                 {'role': 'user', 'content': user_msg},
             ],
-            max_tokens=350,
+            max_tokens=600,
             temperature=0.2,
         )
         answer = response.choices[0].message.content.strip()
@@ -249,7 +251,7 @@ def perplexity_chat(system, user_msg, use_search=False):
 def perplexity_search(query):
     system = (
         'You are AISENS, a friendly AI assistant with real-time web search. '
-        'Answer the user question directly and naturally in 3-4 sentences. '
+        'Answer the user question thoroughly in 4 to 6 sentences. '
         'Do not use bullet points or markdown. Be conversational and informative.'
     )
     answer, citations = perplexity_chat(system, query, use_search=True)
@@ -258,12 +260,11 @@ def perplexity_search(query):
     sources = [{'url': c, 'title': urlparse(c).netloc} for c in (citations or [])]
     return answer, sources
 
-# --- OpenAI fallback ---
 def openai_search(query):
     try:
         system = (
             'You are AISENS, a helpful AI assistant. '
-            'Answer the question directly in 3-4 sentences without bullet points or markdown.'
+            'Answer the question thoroughly in 4 to 6 sentences without bullet points or markdown.'
         )
         response = openai_client.chat.completions.create(
             model='gpt-4o-mini',
@@ -271,7 +272,7 @@ def openai_search(query):
                 {'role': 'system', 'content': system},
                 {'role': 'user', 'content': query},
             ],
-            max_tokens=300,
+            max_tokens=500,
             temperature=0.3,
         )
         return response.choices[0].message.content.strip(), []
@@ -280,16 +281,13 @@ def openai_search(query):
         return 'I was unable to find an answer to that question right now. Please try again.', []
 
 def search_and_reply(query):
-    # Priority 1: Tavily (parity with XiaoZhi chatbot)
     tav = tavily_reply(query)
     if tav and tav[0]:
         return tav
-    # Priority 2: Perplexity (if key set)
     if PPLX_API_KEY:
         pplx = perplexity_search(query)
         if pplx and pplx[0]:
             return pplx
-    # Priority 3: DuckDuckGo + OpenAI synthesis
     return ddg_search(query)
 
 def conversational_reply(query):
@@ -318,7 +316,6 @@ def conversational_reply(query):
     except Exception:
         return 'Hello! I am AISENS. What would you like to know?'
 
-# --- Routes ---
 @app.route('/health')
 def health():
     return jsonify({'status': 'ok', 'timestamp': datetime.utcnow().isoformat()})
