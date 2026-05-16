@@ -209,7 +209,7 @@
         });
         const d = await r.json();
         removeThinking();
-        const botText = (d.type === 'result' && d.data) ? (d.data.summary || 'No answer found.') : (d.message || JSON.stringify(d));
+        const _rawBot = (d.type === 'result' && d.data) ? (d.data.summary || 'No answer found.') : (d.message || JSON.stringify(d)); const botText = String(_rawBot||'').replace(/^\s*Tavily summary\s*:?\s*/i,'').replace(/Detailed sources?\s*:[\s\S]*$/i,'').replace(/Source\s*:\s*/gi,'').replace(/\[\s*(\.{3}|…)\s*\]/g,'').replace(/\|+/g,', ').replace(/-{2,}/g,' ').replace(/[•◦▪]/g,'').replace(/https?:\/\/\S+/g,'').replace(/\s{2,}/g,' ').replace(/\s+([,.;:!?])/g,'$1').trim() || 'No answer found.';
         appendMessage('bot', botText);
                     const srcs=(d.type==='result'&&d.data)?(d.data.sources||[]):[];if(srcs.length){const sc=document.createElement('div');sc.className='message bot';sc.innerHTML='<div class="summary-card"><div class="sources-label">Sources</div>'+srcs.map(s=>'<div class="answer-text"><a href="'+s.url+'" target="_blank" rel="noopener" style="color:#7b8cde;text-decoration:none;">'+(s.title||s.url)+'</a></div>').join('')+'</div>';chat.appendChild(sc);chat.scrollTop=chat.scrollHeight;}speakText(botText);
       } catch (e) {
