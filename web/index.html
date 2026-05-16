@@ -85,7 +85,7 @@
         );
       }
       function speakText(text) {
-        if (!('speechSynthesis' in window)) return;
+        if (!('speechSynthesis' in window)) return; text = String(text || '').replace(/^\s*Tavily summary\s*:?\s*/i, '').replace(/Detailed sources?\s*:[\s\S]*$/i, '').replace(/Source\s*:\s*/gi, '').replace(/\[\s*(\.{3}|…)\s*\]/g, '').replace(/\|+/g, ', ').replace(/-{2,}/g, ' ').replace(/[•◦▪]/g, '').replace(/https?:\/\/\S+/g, '').replace(/\s{2,}/g, ' ').replace(/\s+([,.;:!?])/g, '$1').trim(); if (!text) return;
         const speakNow = () => {
           const u = new SpeechSynthesisUtterance(text);
           u.lang = 'en-GB';
