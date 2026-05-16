@@ -89,6 +89,7 @@
         const speakNow = () => {
           const u = new SpeechSynthesisUtterance(text);
           u.lang = 'en-GB';
+          u.rate = 1.5;
           const v = _pickVoice();
           if (v) u.voice = v;
           window.speechSynthesis.speak(u);
